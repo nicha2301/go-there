@@ -1,11 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from 'expo-router';
+import { useRouter } from 'expo-router';
+import { styled } from 'nativewind';
 import React, { useEffect, useState } from 'react';
 import {
     ActivityIndicator,
     FlatList,
     Keyboard,
-    StyleSheet,
     Text,
     TextInput,
     TouchableOpacity,
@@ -13,10 +13,15 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import PlaceItem from '../components/PlaceItem';
-import theme from '../constants/theme';
-import { useFavorites } from '../hooks/useFavorites';
-import { useLocation } from '../hooks/useLocation';
-import { usePlaces } from '../hooks/usePlaces';
+import useFavorites from '../hooks/useFavorites';
+import useLocation from '../hooks/useLocation';
+import usePlaces from '../hooks/usePlaces';
+
+// Styled components
+const StyledView = styled(View);
+const StyledText = styled(Text);
+const StyledTextInput = styled(TextInput);
+const StyledTouchableOpacity = styled(TouchableOpacity);
 
 // Danh mục tìm kiếm
 const CATEGORIES = [
@@ -30,7 +35,7 @@ const CATEGORIES = [
 
 export default function SearchScreen() {
   const insets = useSafeAreaInsets();
-  const navigation = useNavigation();
+  const router = useRouter();
   const { search, searchNearby, searchResults, history, loading, loadHistory, selectPlace } = usePlaces();
   const { location, fetchCurrentLocation } = useLocation();
   const { checkIsFavorite, toggleFavorite } = useFavorites();
@@ -57,6 +62,8 @@ export default function SearchScreen() {
   useEffect(() => {
     const updateFavoriteStatus = async () => {
       const placesToCheck = showHistory ? [...history] : [...searchResults];
+      if (placesToCheck.length === 0) return;
+      
       const favoriteStatus = {};
       
       for (const place of placesToCheck) {
@@ -67,7 +74,7 @@ export default function SearchScreen() {
     };
     
     updateFavoriteStatus();
-  }, [searchResults, history, showHistory]);
+  }, [searchResults, history, showHistory, checkIsFavorite]);
   
   // Xử lý tìm kiếm
   const handleSearch = async () => {
@@ -108,7 +115,15 @@ export default function SearchScreen() {
   // Xử lý khi chọn một địa điểm
   const handleSelectPlace = async (place) => {
     await selectPlace(place);
-    navigation.navigate('PlaceDetail', { place });
+    
+    // Chuyển đến màn hình bản đồ với địa điểm đã chọn
+    router.push({
+      pathname: "/map",
+      params: { 
+        place: JSON.stringify(place),
+        from: 'search'
+      }
+    });
   };
   
   // Xử lý toggle yêu thích
@@ -134,222 +149,130 @@ export default function SearchScreen() {
 
   // Hiển thị phần header với các danh mục
   const renderCategoryList = () => (
-    <View style={styles.categoriesContainer}>
+    <StyledView className="px-4 py-2">
       <FlatList
         data={CATEGORIES}
         keyExtractor={(item) => item.id}
         horizontal
         showsHorizontalScrollIndicator={false}
         renderItem={({ item }) => (
-          <TouchableOpacity
-            style={[
-              styles.categoryItem,
-              selectedCategory === item.id && styles.selectedCategoryItem,
-            ]}
+          <StyledTouchableOpacity
+            className={`flex-row items-center px-3 py-2 mr-2 rounded-medium ${
+              selectedCategory === item.id 
+                ? 'bg-primary' 
+                : 'bg-background border border-lightGrey'
+            }`}
             onPress={() => handleCategoryPress(item.id)}
           >
             <Ionicons
               name={item.icon}
               size={20}
-              color={selectedCategory === item.id ? 'white' : theme.colors.primary}
+              color={selectedCategory === item.id ? 'white' : '#3366FF'}
             />
-            <Text
-              style={[
-                styles.categoryText,
-                selectedCategory === item.id && styles.selectedCategoryText,
-              ]}
+            <StyledText
+              className={`ml-1 text-sm ${
+                selectedCategory === item.id ? 'text-white' : 'text-primary'
+              }`}
             >
               {item.label}
-            </Text>
-          </TouchableOpacity>
+            </StyledText>
+          </StyledTouchableOpacity>
         )}
       />
-    </View>
+    </StyledView>
   );
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
+    <StyledView className={`flex-1 bg-background pt-[${insets.top}px]`}>
       {/* Thanh tìm kiếm */}
-      <View style={styles.searchBarContainer}>
-        <View style={styles.searchBar}>
-          <Ionicons name="search" size={20} color={theme.colors.grey} />
-          <TextInput
-            style={styles.searchInput}
+      <StyledView className="flex-row items-center px-4 py-2">
+        <StyledView className="flex-row items-center flex-1 px-3 py-2 bg-card rounded-medium border border-lightGrey">
+          <Ionicons name="search" size={20} color="#8F9BB3" />
+          <StyledTextInput
+            className="flex-1 ml-2 text-base text-text"
             placeholder="Tìm kiếm địa điểm..."
-            placeholderTextColor={theme.colors.grey}
+            placeholderTextColor="#8F9BB3"
             value={searchQuery}
             onChangeText={setSearchQuery}
             onSubmitEditing={handleSearch}
             returnKeyType="search"
           />
           {searchQuery.length > 0 && (
-            <TouchableOpacity
+            <StyledTouchableOpacity
               onPress={() => {
                 setSearchQuery('');
                 setShowHistory(true);
               }}
             >
-              <Ionicons name="close-circle" size={20} color={theme.colors.grey} />
-            </TouchableOpacity>
+              <Ionicons name="close-circle" size={20} color="#8F9BB3" />
+            </StyledTouchableOpacity>
           )}
-        </View>
+        </StyledView>
         
-        <TouchableOpacity style={styles.searchButton} onPress={handleSearch}>
-          <Text style={styles.searchButtonText}>Tìm</Text>
-        </TouchableOpacity>
-      </View>
+        <StyledTouchableOpacity 
+          className="ml-2 px-4 py-2 bg-primary rounded-medium"
+          onPress={handleSearch}
+        >
+          <StyledText className="text-white font-bold">Tìm</StyledText>
+        </StyledTouchableOpacity>
+      </StyledView>
 
       {/* Danh sách danh mục */}
       {renderCategoryList()}
 
       {/* Hiển thị trạng thái loading */}
       {loading && (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={theme.colors.primary} />
-        </View>
+        <StyledView className="flex-1 justify-center items-center">
+          <ActivityIndicator size="large" color="#3366FF" />
+        </StyledView>
       )}
 
       {/* Hiển thị danh sách kết quả tìm kiếm hoặc lịch sử */}
       {!loading && (
         <>
-          <View style={styles.resultHeader}>
-            <Text style={styles.resultTitle}>
+          <StyledView className="flex-row justify-between items-center px-4 py-2">
+            <StyledText className="text-lg font-bold text-text">
               {showHistory
                 ? 'Lịch sử tìm kiếm'
                 : `Kết quả (${searchResults.length})`}
-            </Text>
+            </StyledText>
             {showHistory && history.length > 0 && (
-              <TouchableOpacity>
-                <Text style={styles.clearText}>Xóa</Text>
-              </TouchableOpacity>
+              <StyledTouchableOpacity>
+                <StyledText className="text-error font-bold">Xóa</StyledText>
+              </StyledTouchableOpacity>
             )}
-          </View>
+          </StyledView>
 
           <FlatList
             data={showHistory ? history : searchResults}
             keyExtractor={(item) => item.id.toString()}
             renderItem={renderItem}
-            contentContainerStyle={styles.listContent}
+            contentContainerStyle={{ padding: 16 }}
             showsVerticalScrollIndicator={false}
             ListEmptyComponent={
-              <View style={styles.emptyContainer}>
-                <Ionicons name="search-outline" size={48} color={theme.colors.grey} />
-                <Text style={styles.emptyText}>
+              <StyledView className="flex-1 justify-center items-center py-10">
+                <Ionicons 
+                  name={showHistory ? "time" : "search"} 
+                  size={64} 
+                  color="#E4E9F2" 
+                />
+                <StyledText className="text-lg font-bold text-text mt-4">
+                  {showHistory 
+                    ? 'Lịch sử tìm kiếm trống'
+                    : 'Không tìm thấy kết quả'
+                  }
+                </StyledText>
+                <StyledText className="text-center text-textSecondary mt-2 px-8">
                   {showHistory
-                    ? 'Không có lịch sử tìm kiếm'
-                    : 'Không tìm thấy kết quả'}
-                </Text>
-              </View>
+                    ? 'Các địa điểm bạn tìm kiếm sẽ xuất hiện ở đây'
+                    : 'Thử tìm kiếm với từ khóa khác hoặc thay đổi danh mục'
+                  }
+                </StyledText>
+              </StyledView>
             }
           />
         </>
       )}
-    </View>
+    </StyledView>
   );
-}
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: theme.colors.background,
-  },
-  searchBarContainer: {
-    flexDirection: 'row',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  searchBar: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: theme.colors.card,
-    borderRadius: theme.radius.medium,
-    paddingHorizontal: 12,
-    height: 48,
-    ...theme.shadow.small,
-  },
-  searchInput: {
-    flex: 1,
-    height: '100%',
-    marginLeft: 8,
-    fontSize: 16,
-    color: theme.colors.text,
-  },
-  searchButton: {
-    marginLeft: 12,
-    paddingHorizontal: 16,
-    height: 48,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: theme.colors.primary,
-    borderRadius: theme.radius.medium,
-    ...theme.shadow.small,
-  },
-  searchButtonText: {
-    color: 'white',
-    fontWeight: 'bold',
-  },
-  categoriesContainer: {
-    paddingHorizontal: 16,
-    paddingBottom: 12,
-  },
-  categoryItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    marginRight: 10,
-    borderRadius: theme.radius.medium,
-    backgroundColor: theme.colors.card,
-    ...theme.shadow.tiny,
-  },
-  selectedCategoryItem: {
-    backgroundColor: theme.colors.primary,
-  },
-  categoryText: {
-    marginLeft: 6,
-    fontSize: 14,
-    color: theme.colors.text,
-  },
-  selectedCategoryText: {
-    color: 'white',
-  },
-  resultHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    marginTop: 8,
-    marginBottom: 4,
-  },
-  resultTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: theme.colors.text,
-  },
-  clearText: {
-    color: theme.colors.error,
-    fontWeight: 'bold',
-  },
-  listContent: {
-    padding: 16,
-    paddingTop: 8,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 40,
-  },
-  emptyText: {
-    marginTop: 12,
-    fontSize: 16,
-    color: theme.colors.textSecondary,
-  },
-}); 
+} 

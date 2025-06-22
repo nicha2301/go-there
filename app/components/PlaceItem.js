@@ -1,8 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { useRouter } from 'expo-router';
+import { styled } from 'nativewind';
 import React, { memo } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import theme from '../constants/theme';
+import { Text, TouchableOpacity, View } from 'react-native';
 
 // Icon cho từng danh mục
 const CATEGORY_ICONS = {
@@ -18,8 +18,13 @@ const CATEGORY_ICONS = {
   other: 'location-outline'
 };
 
-const PlaceItem = ({ place, isFavorite, onFavoriteToggle, showDistance = true }) => {
-  const navigation = useNavigation();
+// Styled components
+const StyledView = styled(View);
+const StyledText = styled(Text);
+const StyledTouchableOpacity = styled(TouchableOpacity);
+
+const PlaceItem = ({ place, isFavorite, onFavoriteToggle, showDistance = true, onPress }) => {
+  const router = useRouter();
   
   // Xác định icon dựa trên danh mục
   const iconName = place.category && CATEGORY_ICONS[place.category] 
@@ -28,7 +33,14 @@ const PlaceItem = ({ place, isFavorite, onFavoriteToggle, showDistance = true })
   
   // Xử lý khi click vào địa điểm
   const handlePress = () => {
-    navigation.navigate('PlaceDetail', { place });
+    if (onPress) {
+      onPress(place);
+    } else {
+      router.push({
+        pathname: "/screens/PlaceDetail",
+        params: { place: JSON.stringify(place) }
+      });
+    }
   };
   
   // Xử lý khi click vào icon yêu thích
@@ -39,89 +51,47 @@ const PlaceItem = ({ place, isFavorite, onFavoriteToggle, showDistance = true })
   };
 
   return (
-    <TouchableOpacity 
-      style={styles.container}
+    <StyledTouchableOpacity 
+      className="flex-row items-center bg-card rounded-medium my-1.5 p-3 shadow-sm"
       onPress={handlePress}
       activeOpacity={0.7}
     >
-      <View style={styles.iconContainer}>
-        <Ionicons name={iconName} size={24} color={theme.colors.primary} />
-      </View>
+      <StyledView className="w-11 h-11 justify-center items-center rounded-circle bg-background mr-3">
+        <Ionicons name={iconName} size={24} color="#3366FF" />
+      </StyledView>
       
-      <View style={styles.detailsContainer}>
-        <Text style={styles.placeName} numberOfLines={1}>
+      <StyledView className="flex-1">
+        <StyledText className="text-base font-bold text-text" numberOfLines={1}>
           {place.name}
-        </Text>
+        </StyledText>
         
-        <Text style={styles.address} numberOfLines={2}>
+        <StyledText className="text-sm text-textSecondary mt-0.5" numberOfLines={2}>
           {place.address}
-        </Text>
+        </StyledText>
         
         {showDistance && place.distance && (
-          <Text style={styles.distance}>
-            <Ionicons name="navigate" size={12} color={theme.colors.primary} />
+          <StyledText className="text-xs text-primary mt-1">
+            <Ionicons name="navigate" size={12} color="#3366FF" />
             {' '}{place.distance}
-          </Text>
+          </StyledText>
         )}
-      </View>
+      </StyledView>
       
       {onFavoriteToggle && (
-        <TouchableOpacity 
-          style={styles.favoriteButton}
+        <StyledTouchableOpacity 
+          className="p-2"
           onPress={handleFavoritePress}
         >
           <Ionicons 
             name={isFavorite ? 'heart' : 'heart-outline'} 
             size={24} 
-            color={isFavorite ? theme.colors.error : theme.colors.grey} 
+            color={isFavorite ? '#FF3D71' : '#8F9BB3'} 
           />
-        </TouchableOpacity>
+        </StyledTouchableOpacity>
       )}
-    </TouchableOpacity>
+    </StyledTouchableOpacity>
   );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: theme.colors.card,
-    borderRadius: theme.radius.medium,
-    marginVertical: 6,
-    padding: 12,
-    ...theme.shadow.small
-  },
-  iconContainer: {
-    width: 44,
-    height: 44,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderRadius: theme.radius.circle,
-    backgroundColor: theme.colors.background,
-    marginRight: 12
-  },
-  detailsContainer: {
-    flex: 1
-  },
-  placeName: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: theme.colors.text
-  },
-  address: {
-    fontSize: 14,
-    color: theme.colors.textSecondary,
-    marginTop: 2
-  },
-  distance: {
-    fontSize: 12,
-    color: theme.colors.primary,
-    marginTop: 4
-  },
-  favoriteButton: {
-    padding: 8
-  }
-});
 
 // Sử dụng memo để tối ưu hiệu suất render
 export default memo(PlaceItem); 

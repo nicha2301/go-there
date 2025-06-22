@@ -1,11 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useLocalSearchParams, useNavigation } from 'expo-router';
+import { useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Animated,
   Dimensions,
-  StyleSheet,
   Text,
   TouchableOpacity,
   View
@@ -13,8 +12,8 @@ import {
 import MapView, { Marker, Polyline, PROVIDER_DEFAULT } from 'react-native-maps';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import theme from '../constants/theme';
-import { useLocation } from '../hooks/useLocation';
-import { useRoute } from '../hooks/useRoute';
+import useLocation from '../hooks/useLocation';
+import useRoute from '../hooks/useRoute';
 
 const { width, height } = Dimensions.get('window');
 const CARD_HEIGHT = 220;
@@ -36,21 +35,53 @@ interface Coordinates {
   longitude: number;
 }
 
+interface LocationType {
+  latitude: number;
+  longitude: number;
+  timestamp?: number;
+}
+
+interface RouteType {
+  geometry: {
+    coordinates: [number, number][];
+  };
+  distance: number;
+  duration: number;
+  formattedDistance: string;
+  formattedDuration: string;
+  startPoint: Coordinates;
+  endPoint: Coordinates;
+  transportMode: string;
+}
+
 const MapScreen = () => {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
+  const router = useRouter();
   const params = useLocalSearchParams();
   
   const [mapReady, setMapReady] = useState(false);
   const [selectedPlace, setSelectedPlace] = useState<Place | null>(null);
   const [markerCoords, setMarkerCoords] = useState<Coordinates | null>(null);
   const [transportMode, setTransportMode] = useState<string>('driving');
+  const [showBackButton, setShowBackButton] = useState(false);
   
   const mapRef = useRef<MapView | null>(null);
   const slideAnim = useRef(new Animated.Value(BOTTOM_SHEET_HEIGHT)).current;
   
-  const { location, loading: locationLoading, error: locationError, startWatchingLocation } = useLocation();
-  const { route, loading: routeLoading, error: routeError, findRoute } = useRoute();
+  const { location, loading: locationLoading, error: locationError, startWatchingLocation } = useLocation() as {
+    location: LocationType | null;
+    loading: boolean;
+    error: string | null;
+    startWatchingLocation: () => void;
+  };
+  
+  const { route, loading: routeLoading, error: routeError, findRoute } = useRoute() as {
+    route: RouteType | null;
+    loading: boolean;
+    error: string | null;
+    findRoute: (start: Coordinates, end: Coordinates, mode: string) => Promise<RouteType | null>;
+  };
   
   const initialRegion = {
     latitude: 10.762622,  // Vị trí mặc định TP.HCM
@@ -58,6 +89,8 @@ const MapScreen = () => {
     latitudeDelta: 0.0922,
     longitudeDelta: 0.0421,
   };
+
+  const hasZoomedToInitialLocation = useRef(false);
 
   // Lấy vị trí ban đầu
   useEffect(() => {
@@ -67,14 +100,17 @@ const MapScreen = () => {
   // Zoom đến vị trí hiện tại khi có dữ liệu
   useEffect(() => {
     if (location && mapRef.current && mapReady) {
-      setTimeout(() => {
-        mapRef.current?.animateToRegion({
-          latitude: location.latitude,
-          longitude: location.longitude,
-          latitudeDelta: 0.005,
-          longitudeDelta: 0.005,
-        }, 1000);
-      }, 500);
+      if (!hasZoomedToInitialLocation.current) {
+        setTimeout(() => {
+          mapRef.current?.animateToRegion({
+            latitude: location.latitude,
+            longitude: location.longitude,
+            latitudeDelta: 0.005,
+            longitudeDelta: 0.005,
+          }, 1000);
+          hasZoomedToInitialLocation.current = true;
+        }, 500);
+      }
     }
   }, [location, mapReady]);
   
@@ -86,13 +122,16 @@ const MapScreen = () => {
         try {
           const place = typeof params.place === 'string' 
             ? JSON.parse(params.place as string) as Place
-            : params.place as Place;
+            : params.place as unknown as Place;
             
           setSelectedPlace(place);
           setMarkerCoords({
             latitude: place.latitude,
             longitude: place.longitude
           });
+          
+          // Hiển thị nút quay lại khi có địa điểm được chọn
+          setShowBackButton(true);
           
           // Zoom đến địa điểm và tìm đường nếu có vị trí người dùng
           if (location && mapRef.current) {
@@ -112,6 +151,9 @@ const MapScreen = () => {
         } catch (error) {
           console.error('Error parsing place data:', error);
         }
+      } else {
+        // Không hiển thị nút quay lại nếu không có địa điểm được chọn
+        setShowBackButton(false);
       }
     };
     
@@ -145,17 +187,20 @@ const MapScreen = () => {
   // Chuyển đến màn hình chỉ đường chi tiết
   const navigateToDirections = () => {
     if (location && selectedPlace && route) {
-      navigation.navigate('RouteDirections', {
-        startLocation: {
-          latitude: location.latitude,
-          longitude: location.longitude
-        },
-        endLocation: {
-          latitude: selectedPlace.latitude,
-          longitude: selectedPlace.longitude
-        },
-        place: selectedPlace,
-        route: route
+      router.push({
+        pathname: "/screens/RouteDirections" as any,
+        params: {
+          startLocation: JSON.stringify({
+            latitude: location.latitude,
+            longitude: location.longitude
+          }),
+          endLocation: JSON.stringify({
+            latitude: selectedPlace.latitude,
+            longitude: selectedPlace.longitude
+          }),
+          place: JSON.stringify(selectedPlace),
+          route: JSON.stringify(route)
+        }
       });
     }
   };
@@ -168,13 +213,41 @@ const MapScreen = () => {
       useNativeDriver: false,
     }).start();
   };
+  
+  // Xử lý nút quay lại
+  const handleBackPress = () => {
+    if (selectedPlace) {
+      // Nếu có địa điểm được chọn, hãy xóa nó và quay lại màn hình bản đồ thông thường
+      setSelectedPlace(null);
+      setMarkerCoords(null);
+      setShowBackButton(false);
+      
+      // Quay lại vị trí hiện tại
+      if (location && mapRef.current) {
+        mapRef.current.animateToRegion({
+          latitude: location.latitude,
+          longitude: location.longitude,
+          latitudeDelta: 0.01,
+          longitudeDelta: 0.01,
+        }, 1000);
+      }
+      
+      // Chuyển đến tab tìm kiếm nếu đến từ đó
+      if (params?.from === 'search') {
+        router.push('/search' as any);
+      }
+    } else {
+      // Nếu không có địa điểm được chọn, chuyển đến tab tìm kiếm
+      router.push('/search' as any);
+    }
+  };
 
   return (
-    <View style={styles.container}>
+    <View className="flex-1 bg-background">
       {/* Bản đồ */}
       <MapView
         ref={mapRef}
-        style={styles.map}
+        className="flex-1 w-full h-full"
         provider={PROVIDER_DEFAULT}
         initialRegion={initialRegion}
         showsUserLocation
@@ -187,7 +260,7 @@ const MapScreen = () => {
         {/* Marker cho địa điểm được chọn */}
         {markerCoords && (
           <Marker coordinate={markerCoords} title={selectedPlace?.name}>
-            <View style={styles.markerContainer}>
+            <View className="items-center justify-center">
               <Ionicons name="location" size={32} color={theme.colors.primary} />
             </View>
           </Marker>
@@ -206,17 +279,21 @@ const MapScreen = () => {
         )}
       </MapView>
 
-      {/* Nút back */}
-      <TouchableOpacity 
-        style={[styles.backButton, { top: insets.top + 10 }]} 
-        onPress={() => navigation.goBack()}
-      >
-        <Ionicons name="arrow-back" size={24} color={theme.colors.text} />
-      </TouchableOpacity>
+      {/* Nút back - chỉ hiển thị khi có địa điểm được chọn */}
+      {showBackButton && (
+        <TouchableOpacity 
+          className="absolute left-4 w-10 h-10 rounded-full bg-white justify-center items-center shadow-md"
+          style={{ top: insets.top + 10 }}
+          onPress={handleBackPress}
+        >
+          <Ionicons name="arrow-back" size={24} color={theme.colors.text} />
+        </TouchableOpacity>
+      )}
 
       {/* Nút vị trí hiện tại */}
       <TouchableOpacity 
-        style={[styles.myLocationButton, { bottom: route ? 300 : BOTTOM_SHEET_HEIGHT + 20 }]}
+        className="absolute right-4 w-[46px] h-[46px] rounded-full bg-white justify-center items-center shadow-md"
+        style={{ bottom: route ? 300 : BOTTOM_SHEET_HEIGHT + 20 }}
         onPress={() => {
           if (location) {
             mapRef.current?.animateToRegion({
@@ -233,47 +310,49 @@ const MapScreen = () => {
       
       {/* Loading indicator */}
       {(locationLoading || routeLoading) && (
-        <View style={styles.loadingContainer}>
+        <View className="absolute inset-0 justify-center items-center bg-white/40">
           <ActivityIndicator size="large" color={theme.colors.primary} />
         </View>
       )}
       
       {/* Bottom sheet info */}
-      <Animated.View style={[styles.bottomSheet, { height: slideAnim }]}>
+      <Animated.View 
+        className="absolute bottom-0 left-0 right-0 bg-white rounded-t-[20px] p-5 shadow-lg"
+        style={{ height: slideAnim }}
+      >
         {/* Handle để kéo mở bottom sheet */}
-        <TouchableOpacity style={styles.sheetHandle} onPress={toggleBottomSheet}>
-          <View style={styles.handle} />
+        <TouchableOpacity className="items-center pb-2.5" onPress={toggleBottomSheet}>
+          <View className="w-10 h-[5px] rounded-sm bg-border" />
         </TouchableOpacity>
 
         {/* Thông tin địa điểm */}
         {selectedPlace && (
-          <View style={styles.placeInfo}>
-            <Text style={styles.placeName}>{selectedPlace.name}</Text>
-            <Text style={styles.placeAddress} numberOfLines={2}>
+          <View className="mt-2.5">
+            <Text className="text-xl font-bold text-text">{selectedPlace.name}</Text>
+            <Text className="text-sm text-textSecondary mt-1" numberOfLines={2}>
               {selectedPlace.address}
             </Text>
             
             {/* Thông tin lộ trình nếu có */}
             {route && (
-              <View style={styles.routeInfo}>
-                <View style={styles.routeStats}>
-                  <View style={styles.routeStat}>
+              <View className="mt-4 p-3 bg-card rounded-md">
+                <View className="flex-row justify-around mb-3">
+                  <View className="flex-row items-center">
                     <Ionicons name="time-outline" size={18} color={theme.colors.primary} />
-                    <Text style={styles.routeStatValue}>{route.formattedDuration}</Text>
+                    <Text className="ml-1.5 text-base font-semibold text-text">{route.formattedDuration}</Text>
                   </View>
-                  <View style={styles.routeStat}>
+                  <View className="flex-row items-center">
                     <Ionicons name="resize-outline" size={18} color={theme.colors.primary} />
-                    <Text style={styles.routeStatValue}>{route.formattedDistance}</Text>
+                    <Text className="ml-1.5 text-base font-semibold text-text">{route.formattedDistance}</Text>
                   </View>
                 </View>
                 
                 {/* Các phương tiện giao thông */}
-                <View style={styles.transportModes}>
+                <View className="flex-row justify-center mt-2.5">
                   <TouchableOpacity
-                    style={[
-                      styles.transportButton,
-                      transportMode === 'driving' && styles.transportButtonActive
-                    ]}
+                    className={`w-11 h-11 rounded-full justify-center items-center mx-2.5 ${
+                      transportMode === 'driving' ? 'bg-primary' : 'bg-lightGrey'
+                    }`}
                     onPress={() => changeTransportMode('driving')}
                   >
                     <Ionicons 
@@ -284,10 +363,9 @@ const MapScreen = () => {
                   </TouchableOpacity>
                   
                   <TouchableOpacity
-                    style={[
-                      styles.transportButton,
-                      transportMode === 'walking' && styles.transportButtonActive
-                    ]}
+                    className={`w-11 h-11 rounded-full justify-center items-center mx-2.5 ${
+                      transportMode === 'walking' ? 'bg-primary' : 'bg-lightGrey'
+                    }`}
                     onPress={() => changeTransportMode('walking')}
                   >
                     <Ionicons 
@@ -298,10 +376,9 @@ const MapScreen = () => {
                   </TouchableOpacity>
                   
                   <TouchableOpacity
-                    style={[
-                      styles.transportButton,
-                      transportMode === 'cycling' && styles.transportButtonActive
-                    ]}
+                    className={`w-11 h-11 rounded-full justify-center items-center mx-2.5 ${
+                      transportMode === 'cycling' ? 'bg-primary' : 'bg-lightGrey'
+                    }`}
                     onPress={() => changeTransportMode('cycling')}
                   >
                     <Ionicons 
@@ -316,11 +393,11 @@ const MapScreen = () => {
             
             {/* Nút điều hướng */}
             <TouchableOpacity 
-              style={styles.directionButton}
+              className="flex-row justify-center items-center bg-primary rounded-md py-3.5 mt-5 shadow-sm"
               onPress={navigateToDirections}
             >
               <Ionicons name="navigate" size={18} color="white" />
-              <Text style={styles.directionButtonText}>Chỉ đường chi tiết</Text>
+              <Text className="text-white font-bold text-base ml-2">Chỉ đường chi tiết</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -329,140 +406,4 @@ const MapScreen = () => {
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: theme.colors.background,
-  },
-  map: {
-    flex: 1,
-    width: '100%',
-    height: '100%',
-  },
-  backButton: {
-    position: 'absolute',
-    left: 16,
-    width: 40,
-    height: 40,
-    borderRadius: theme.radius.circle,
-    backgroundColor: 'white',
-    justifyContent: 'center',
-    alignItems: 'center',
-    ...theme.shadow.medium,
-  },
-  myLocationButton: {
-    position: 'absolute',
-    right: 16,
-    width: 46,
-    height: 46,
-    borderRadius: theme.radius.circle,
-    backgroundColor: 'white',
-    justifyContent: 'center',
-    alignItems: 'center',
-    ...theme.shadow.medium,
-  },
-  markerContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  loadingContainer: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.4)',
-  },
-  bottomSheet: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: 'white',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: 20,
-    ...theme.shadow.large,
-  },
-  sheetHandle: {
-    alignItems: 'center',
-    paddingBottom: 10,
-  },
-  handle: {
-    width: 40,
-    height: 5,
-    borderRadius: 3,
-    backgroundColor: theme.colors.border,
-  },
-  placeInfo: {
-    marginTop: 10,
-  },
-  placeName: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: theme.colors.text,
-  },
-  placeAddress: {
-    fontSize: 14,
-    color: theme.colors.textSecondary,
-    marginTop: 4,
-  },
-  routeInfo: {
-    marginTop: 15,
-    padding: 12,
-    backgroundColor: theme.colors.card,
-    borderRadius: theme.radius.medium,
-  },
-  routeStats: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginBottom: 12,
-  },
-  routeStat: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  routeStatValue: {
-    marginLeft: 6,
-    fontSize: 16,
-    fontWeight: '600',
-    color: theme.colors.text,
-  },
-  transportModes: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    marginTop: 10,
-  },
-  transportButton: {
-    width: 44,
-    height: 44,
-    borderRadius: theme.radius.circle,
-    backgroundColor: theme.colors.lightGrey,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginHorizontal: 10,
-  },
-  transportButtonActive: {
-    backgroundColor: theme.colors.primary,
-  },
-  directionButton: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: theme.colors.primary,
-    borderRadius: theme.radius.medium,
-    paddingVertical: 14,
-    marginTop: 20,
-    ...theme.shadow.small,
-  },
-  directionButtonText: {
-    color: 'white',
-    fontWeight: 'bold',
-    fontSize: 16,
-    marginLeft: 8,
-  },
-});
-
-export default MapScreen; 
+export default MapScreen;

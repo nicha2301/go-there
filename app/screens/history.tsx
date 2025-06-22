@@ -1,11 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from 'expo-router';
+import { useNavigation } from '@react-navigation/native';
+import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
     FlatList,
-    StyleSheet,
     Text,
     TouchableOpacity,
     View
@@ -13,17 +13,34 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import PlaceItem from '../components/PlaceItem';
 import theme from '../constants/theme';
-import { useFavorites } from '../hooks/useFavorites';
-import { usePlaces } from '../hooks/usePlaces';
+import useFavorites from '../hooks/useFavorites';
+import usePlaces from '../hooks/usePlaces';
 import { clearHistory, removeFromHistory } from '../services/storageService';
+
+// Định nghĩa kiểu dữ liệu cho Place
+interface Place {
+  id: string | number;
+  name: string;
+  address?: string;
+  timestamp?: number | string;
+  [key: string]: any; // Cho phép các thuộc tính khác
+}
+
+// Định nghĩa kiểu dữ liệu cho Favorites
+interface FavoritesState {
+  [key: string]: boolean;
+}
 
 export default function HistoryScreen() {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const navigation = useNavigation();
   const { loadHistory, history, loading } = usePlaces();
   const { checkIsFavorite, toggleFavorite } = useFavorites();
   
-  const [favorites, setFavorites] = useState({});
+  const [favorites, setFavorites] = useState<FavoritesState>({});
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   
   // Load dữ liệu khi màn hình được mở
   useEffect(() => {
@@ -38,41 +55,49 @@ export default function HistoryScreen() {
     return () => {
       unsubscribe();
     };
-  }, []);
+  }, [navigation]);
   
   // Cập nhật trạng thái yêu thích của từng địa điểm
   useEffect(() => {
     const updateFavoriteStatus = async () => {
-      const favoriteStatus = {};
+      const favoriteStatus: FavoritesState = {};
       
-      for (const place of history) {
-        favoriteStatus[place.id] = await checkIsFavorite(place.id);
+      for (const place of history as Place[]) {
+        favoriteStatus[place.id.toString()] = await checkIsFavorite(place.id);
       }
       
       setFavorites(favoriteStatus);
     };
     
-    if (history.length > 0) {
+    if (history && history.length > 0) {
       updateFavoriteStatus();
     }
-  }, [history]);
+  }, [history, checkIsFavorite]);
   
   // Xử lý khi chọn một địa điểm
-  const handleSelectPlace = (place) => {
-    navigation.navigate('PlaceDetail', { place });
+  const handleSelectPlace = (place: Place) => {
+    router.push({
+      pathname: "/screens/PlaceDetail" as any,
+      params: { place: JSON.stringify(place) }
+    });
+  };
+  
+  // Xử lý khi nhấn nút tìm kiếm
+  const handleSearchPress = () => {
+    router.push("/search" as any);
   };
   
   // Xử lý khi toggle trạng thái yêu thích
-  const handleToggleFavorite = async (place) => {
+  const handleToggleFavorite = async (place: Place) => {
     await toggleFavorite(place);
     setFavorites(prev => ({
       ...prev,
-      [place.id]: !prev[place.id]
+      [place.id.toString()]: !prev[place.id.toString()]
     }));
   };
   
   // Xử lý xóa một mục khỏi lịch sử
-  const handleRemoveHistoryItem = async (placeId) => {
+  const handleRemoveHistoryItem = async (placeId: string | number) => {
     await removeFromHistory(placeId);
     loadHistory();
   };
@@ -100,7 +125,7 @@ export default function HistoryScreen() {
   };
   
   // Định dạng thời gian
-  const formatTime = (timestamp) => {
+  const formatTime = (timestamp: number | string) => {
     const date = new Date(timestamp);
     const now = new Date();
     
@@ -110,7 +135,7 @@ export default function HistoryScreen() {
     }
     
     // Nếu cùng tuần, hiển thị thứ
-    const daysDiff = Math.floor((now - date) / (1000 * 60 * 60 * 24));
+    const daysDiff = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
     if (daysDiff < 7) {
       const days = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
       return `${days[date.getDay()]}, ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
@@ -121,22 +146,22 @@ export default function HistoryScreen() {
   };
   
   // Render mỗi item trong danh sách
-  const renderItem = ({ item }) => (
-    <View style={styles.historyItem}>
-      <View style={styles.timestampContainer}>
-        <Text style={styles.timestamp}>{formatTime(item.timestamp)}</Text>
+  const renderItem = ({ item }: { item: Place }) => (
+    <View className="mb-5">
+      <View className="px-3 mb-1.5">
+        <Text className="text-xs text-textSecondary font-medium">{formatTime(item.timestamp || Date.now())}</Text>
       </View>
       
-      <View style={styles.placeItemContainer}>
+      <View className="relative">
         <PlaceItem
           place={item}
-          isFavorite={favorites[item.id] || false}
+          isFavorite={favorites[item.id.toString()] || false}
           onFavoriteToggle={handleToggleFavorite}
           onPress={() => handleSelectPlace(item)}
         />
         
         <TouchableOpacity 
-          style={styles.deleteButton}
+          className="absolute -top-2 -right-2 bg-background rounded-xl p-0.5"
           onPress={() => handleRemoveHistoryItem(item.id)}
         >
           <Ionicons name="close-circle" size={22} color={theme.colors.error} />
@@ -146,41 +171,41 @@ export default function HistoryScreen() {
   );
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Lịch sử tìm kiếm</Text>
+    <View className="flex-1 bg-background" style={{ paddingTop: insets.top }}>
+      <View className="flex-row items-center justify-between px-4 py-4">
+        <Text className="text-2xl font-bold text-text">Lịch sử tìm kiếm</Text>
         
-        {history.length > 0 && (
+        {history && history.length > 0 && (
           <TouchableOpacity onPress={handleClearHistory}>
-            <Text style={styles.clearText}>Xóa tất cả</Text>
+            <Text className="text-sm text-error font-bold">Xóa tất cả</Text>
           </TouchableOpacity>
         )}
       </View>
 
       {loading ? (
-        <View style={styles.loadingContainer}>
+        <View className="flex-1 justify-center items-center">
           <ActivityIndicator size="large" color={theme.colors.primary} />
         </View>
       ) : (
         <FlatList
-          data={history}
+          data={history as Place[]}
           renderItem={renderItem}
           keyExtractor={(item) => item.id.toString()}
-          contentContainerStyle={styles.listContainer}
+          contentContainerStyle={{ padding: 16, paddingTop: 8 }}
           showsVerticalScrollIndicator={false}
           ListEmptyComponent={
-            <View style={styles.emptyContainer}>
+            <View className="flex-1 justify-center items-center p-8 mt-[50px]">
               <Ionicons name="time" size={64} color={theme.colors.lightGrey} />
-              <Text style={styles.emptyText}>Lịch sử tìm kiếm trống</Text>
-              <Text style={styles.emptySubText}>
+              <Text className="text-lg font-bold text-text mt-4 text-center">Lịch sử tìm kiếm trống</Text>
+              <Text className="text-sm text-textSecondary text-center mt-2">
                 Các địa điểm bạn tìm kiếm sẽ xuất hiện ở đây để truy cập nhanh sau này.
               </Text>
               
               <TouchableOpacity 
-                style={styles.exploreButton}
-                onPress={() => navigation.navigate('search')}
+                className="mt-6 py-3 px-6 bg-primary rounded-md shadow-sm"
+                onPress={handleSearchPress}
               >
-                <Text style={styles.exploreButtonText}>Tìm kiếm địa điểm</Text>
+                <Text className="text-white font-bold">Tìm kiếm địa điểm</Text>
               </TouchableOpacity>
             </View>
           }
@@ -188,92 +213,4 @@ export default function HistoryScreen() {
       )}
     </View>
   );
-}
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: theme.colors.background,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-  },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: theme.colors.text,
-  },
-  clearText: {
-    fontSize: 14,
-    color: theme.colors.error,
-    fontWeight: 'bold',
-  },
-  listContainer: {
-    padding: 16,
-    paddingTop: 8,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  historyItem: {
-    marginBottom: 20,
-  },
-  timestampContainer: {
-    paddingHorizontal: 12,
-    marginBottom: 6,
-  },
-  timestamp: {
-    fontSize: 12,
-    color: theme.colors.textSecondary,
-    fontWeight: '500',
-  },
-  placeItemContainer: {
-    position: 'relative',
-  },
-  deleteButton: {
-    position: 'absolute',
-    top: -8,
-    right: -8,
-    backgroundColor: theme.colors.background,
-    borderRadius: 12,
-    padding: 2,
-  },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 32,
-    marginTop: 50,
-  },
-  emptyText: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: theme.colors.text,
-    marginTop: 16,
-    textAlign: 'center',
-  },
-  emptySubText: {
-    fontSize: 14,
-    color: theme.colors.textSecondary,
-    textAlign: 'center',
-    marginTop: 8,
-  },
-  exploreButton: {
-    marginTop: 24,
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    backgroundColor: theme.colors.primary,
-    borderRadius: theme.radius.medium,
-    ...theme.shadow.small,
-  },
-  exploreButtonText: {
-    color: 'white',
-    fontWeight: 'bold',
-  },
-}); 
+} 

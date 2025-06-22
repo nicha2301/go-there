@@ -1,82 +1,103 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useLocalSearchParams, useNavigation } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import React, { useEffect, useRef, useState } from 'react';
 import {
-    ActivityIndicator,
-    Linking,
-    ScrollView,
-    Share,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View
+  ActivityIndicator,
+  Linking,
+  Platform,
+  ScrollView,
+  Share,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
 } from 'react-native';
 import MapView, { Marker, PROVIDER_DEFAULT } from 'react-native-maps';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import theme from '../constants/theme';
-import { useFavorites } from '../hooks/useFavorites';
-import { useLocation } from '../hooks/useLocation';
-import { useRoute } from '../hooks/useRoute';
+import useLocation from '../hooks/useLocation';
+import useRoute from '../hooks/useRoute';
+import { isInFavorites, removeFromFavorites, saveToFavorites } from '../services/storageService';
 
 const PlaceDetail = () => {
   const insets = useSafeAreaInsets();
-  const navigation = useNavigation();
+  const router = useRouter();
   const params = useLocalSearchParams();
   
   const [place, setPlace] = useState(null);
   const [isFavorite, setIsFavorite] = useState(false);
   const [loading, setLoading] = useState(true);
+  const hasLoadedData = useRef(false);
   
   const { location } = useLocation();
   const { findRoute } = useRoute();
-  const { checkIsFavorite, toggleFavorite } = useFavorites();
   
   // Lấy dữ liệu địa điểm từ params
   useEffect(() => {
-    if (params.place) {
-      try {
-        const placeData = typeof params.place === 'string'
-          ? JSON.parse(params.place)
-          : params.place;
-        
-        setPlace(placeData);
-        
-        // Kiểm tra xem địa điểm có trong yêu thích không
-        const checkFavoriteStatus = async () => {
-          const status = await checkIsFavorite(placeData.id);
+    // Tránh load lại dữ liệu nhiều lần
+    if (hasLoadedData.current) return;
+    
+    const loadData = async () => {
+      if (params.place) {
+        try {
+          const placeData = typeof params.place === 'string'
+            ? JSON.parse(params.place)
+            : params.place;
+          
+          setPlace(placeData);
+          
+          // Kiểm tra xem địa điểm có trong yêu thích không - sử dụng hàm từ service trực tiếp
+          const status = await isInFavorites(placeData.id);
           setIsFavorite(status);
-        };
-        
-        checkFavoriteStatus();
-      } catch (error) {
-        console.error('Error parsing place data:', error);
+          hasLoadedData.current = true;
+        } catch (error) {
+          console.error('Error parsing place data:', error);
+        }
       }
-    }
-    setLoading(false);
+      setLoading(false);
+    };
+    
+    loadData();
   }, [params]);
   
   // Xử lý toggle yêu thích
   const handleToggleFavorite = async () => {
     if (place) {
-      await toggleFavorite(place);
-      setIsFavorite(prev => !prev);
+      try {
+        if (isFavorite) {
+          await removeFromFavorites(place.id);
+        } else {
+          await saveToFavorites(place);
+        }
+        setIsFavorite(!isFavorite);
+      } catch (error) {
+        console.error('Error toggling favorite:', error);
+      }
     }
   };
   
   // Xử lý chỉ đường
   const handleNavigate = async () => {
     if (location && place) {
-      // Tìm đường với API
-      const route = await findRoute(
-        { latitude: location.latitude, longitude: location.longitude },
-        { latitude: place.latitude, longitude: place.longitude },
-        'driving'
-      );
-      
-      // Chuyển đến màn hình bản đồ với thông tin chỉ đường
-      navigation.navigate('map', { 
-        place: JSON.stringify(place)
-      });
+      try {
+        // Tìm đường với API
+        const route = await findRoute(
+          { latitude: location.latitude, longitude: location.longitude },
+          { latitude: place.latitude, longitude: place.longitude },
+          'driving'
+        );
+        
+        // Chuyển đến màn hình bản đồ với thông tin chỉ đường
+        router.push({
+          pathname: "/map",
+          params: { 
+            place: JSON.stringify(place),
+            from: 'detail'
+          }
+        });
+      } catch (error) {
+        console.error('Error finding route:', error);
+      }
     }
   };
   
@@ -128,7 +149,7 @@ const PlaceDetail = () => {
         <Text style={styles.errorText}>Không tìm thấy thông tin địa điểm</Text>
         <TouchableOpacity
           style={styles.backButton}
-          onPress={() => navigation.goBack()}
+          onPress={() => router.back()}
         >
           <Text style={styles.backButtonText}>Quay lại</Text>
         </TouchableOpacity>
@@ -142,7 +163,7 @@ const PlaceDetail = () => {
       <View style={styles.header}>
         <TouchableOpacity 
           style={styles.backButton}
-          onPress={() => navigation.goBack()}
+          onPress={() => router.back()}
         >
           <Ionicons name="arrow-back" size={24} color={theme.colors.text} />
         </TouchableOpacity>

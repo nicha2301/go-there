@@ -2,13 +2,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useNavigation } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
-    FlatList,
-    SafeAreaView,
-    Share,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View
+  FlatList,
+  SafeAreaView,
+  Share,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
 } from 'react-native';
 import MapView, { Marker, Polyline, PROVIDER_DEFAULT } from 'react-native-maps';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -212,7 +212,7 @@ const RouteDirections = () => {
         <Text style={styles.errorText}>Không có thông tin chỉ đường</Text>
         <TouchableOpacity
           style={styles.backToMapButton}
-          onPress={() => navigation.goBack()}
+          onPress={() => navigation.back()}
         >
           <Text style={styles.backToMapText}>Quay lại bản đồ</Text>
         </TouchableOpacity>
@@ -224,52 +224,69 @@ const RouteDirections = () => {
     <SafeAreaView style={[styles.container, { paddingTop: insets.top }]}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity
+        <TouchableOpacity 
           style={styles.backButton}
-          onPress={() => navigation.goBack()}
+          onPress={() => navigation.back()}
         >
           <Ionicons name="arrow-back" size={24} color={theme.colors.text} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Chỉ đường</Text>
-        <TouchableOpacity
+        
+        <View style={styles.headerTitle}>
+          <Text style={styles.title}>Chỉ đường</Text>
+          <Text style={styles.subtitle}>
+            {route?.formattedDistance} • {route?.formattedDuration}
+          </Text>
+        </View>
+        
+        <TouchableOpacity 
           style={styles.shareButton}
           onPress={shareRoute}
         >
           <Ionicons name="share-outline" size={24} color={theme.colors.text} />
         </TouchableOpacity>
       </View>
-
+      
       {/* Bản đồ */}
       <View style={styles.mapContainer}>
         <MapView
           style={styles.map}
           provider={PROVIDER_DEFAULT}
           initialRegion={{
-            latitude: (startLocation.latitude + endLocation.latitude) / 2,
-            longitude: (startLocation.longitude + endLocation.longitude) / 2,
-            latitudeDelta: 0.05,
-            longitudeDelta: 0.05,
+            latitude: startLocation?.latitude || 10.762622,
+            longitude: startLocation?.longitude || 106.660172,
+            latitudeDelta: 0.01,
+            longitudeDelta: 0.01,
           }}
-          scrollEnabled={false}
-          zoomEnabled={false}
-          rotateEnabled={false}
-          pitchEnabled={false}
         >
-          {/* Điểm xuất phát */}
-          <Marker coordinate={startLocation}>
-            <View style={styles.startMarker}>
-              <Ionicons name="locate" size={20} color="white" />
-            </View>
-          </Marker>
-
-          {/* Điểm đến */}
-          <Marker coordinate={endLocation}>
-            <View style={styles.endMarker}>
-              <Ionicons name="location" size={24} color={theme.colors.primary} />
-            </View>
-          </Marker>
-
-          {/* Polyline cho đường đi */}
+          {/* Điểm bắt đầu */}
+          {startLocation && (
+            <Marker
+              coordinate={{
+                latitude: startLocation.latitude,
+                longitude: startLocation.longitude,
+              }}
+            >
+              <View style={styles.startMarker}>
+                <Ionicons name="navigate" size={24} color="white" />
+              </View>
+            </Marker>
+          )}
+          
+          {/* Điểm kết thúc */}
+          {endLocation && (
+            <Marker
+              coordinate={{
+                latitude: endLocation.latitude,
+                longitude: endLocation.longitude,
+              }}
+            >
+              <View style={styles.endMarker}>
+                <Ionicons name="location" size={24} color={theme.colors.primary} />
+              </View>
+            </Marker>
+          )}
+          
+          {/* Đường đi */}
           {route && route.geometry && (
             <Polyline
               coordinates={route.geometry.coordinates.map(coord => ({
@@ -281,6 +298,14 @@ const RouteDirections = () => {
             />
           )}
         </MapView>
+        
+        {/* Nút quay lại */}
+        <TouchableOpacity 
+          style={styles.mapBackButton}
+          onPress={() => navigation.back()}
+        >
+          <Ionicons name="chevron-back" size={24} color={theme.colors.text} />
+        </TouchableOpacity>
       </View>
 
       {/* Thông tin hành trình */}
@@ -365,7 +390,7 @@ const RouteDirections = () => {
         style={[styles.startButton, { marginBottom: insets.bottom + 16 }]}
         onPress={() => {
           // Trong thực tế, bắt đầu điều hướng real-time
-          navigation.goBack();
+          navigation.back();
         }}
       >
         <Text style={styles.startButtonText}>Bắt đầu điều hướng</Text>
@@ -398,9 +423,17 @@ const styles = StyleSheet.create({
     ...theme.shadow.small,
   },
   headerTitle: {
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+  },
+  title: {
     fontSize: 18,
     fontWeight: 'bold',
     color: theme.colors.text,
+  },
+  subtitle: {
+    fontSize: 14,
+    color: theme.colors.textSecondary,
   },
   errorText: {
     fontSize: 16,
@@ -577,6 +610,18 @@ const styles = StyleSheet.create({
     height: 40,
     justifyContent: 'center',
     alignItems: 'center'
+  },
+  mapBackButton: {
+    position: 'absolute',
+    top: 16,
+    left: 16,
+    width: 40,
+    height: 40,
+    borderRadius: theme.radius.circle,
+    backgroundColor: theme.colors.card,
+    justifyContent: 'center',
+    alignItems: 'center',
+    ...theme.shadow.small,
   },
 });
 

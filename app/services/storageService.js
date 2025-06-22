@@ -96,6 +96,15 @@ export const saveToHistory = async (place) => {
   return limitedHistory;
 };
 
+// Xóa một địa điểm khỏi lịch sử
+export const removeFromHistory = async (placeId) => {
+  const history = await getHistory();
+  const updatedHistory = history.filter(item => item.id !== placeId);
+  
+  await saveData(STORAGE_KEYS.HISTORY, updatedHistory);
+  return updatedHistory;
+};
+
 // Xóa toàn bộ lịch sử
 export const clearHistory = async () => {
   await saveData(STORAGE_KEYS.HISTORY, []);
@@ -112,7 +121,6 @@ export const getSettings = async () => {
   return await getData(STORAGE_KEYS.SETTINGS);
 };
 
-// 为了向后兼容，导出默认对象
 const storageService = {
   saveData,
   getData,
@@ -122,6 +130,7 @@ const storageService = {
   isInFavorites,
   getHistory,
   saveToHistory,
+  removeFromHistory,
   clearHistory,
   saveSettings,
   getSettings

@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import {
-    getFavorites,
-    isInFavorites,
-    removeFromFavorites,
-    saveToFavorites
+  getFavorites,
+  isInFavorites,
+  removeFromFavorites,
+  saveToFavorites
 } from '../services/storageService';
 
 export const useFavorites = () => {
@@ -29,42 +29,6 @@ export const useFavorites = () => {
     }
   };
   
-  // Thêm địa điểm vào danh sách yêu thích
-  const addToFavorites = async (place) => {
-    try {
-      setLoading(true);
-      setError(null);
-      
-      const updatedFavorites = await saveToFavorites(place);
-      setFavorites(updatedFavorites);
-      
-      return true;
-    } catch (err) {
-      setError(err.message);
-      return false;
-    } finally {
-      setLoading(false);
-    }
-  };
-  
-  // Xóa địa điểm khỏi danh sách yêu thích
-  const removeFavorite = async (placeId) => {
-    try {
-      setLoading(true);
-      setError(null);
-      
-      const updatedFavorites = await removeFromFavorites(placeId);
-      setFavorites(updatedFavorites);
-      
-      return true;
-    } catch (err) {
-      setError(err.message);
-      return false;
-    } finally {
-      setLoading(false);
-    }
-  };
-  
   // Kiểm tra xem địa điểm có trong danh sách yêu thích không
   const checkIsFavorite = async (placeId) => {
     try {
@@ -77,12 +41,21 @@ export const useFavorites = () => {
   
   // Toggle trạng thái yêu thích
   const toggleFavorite = async (place) => {
-    const isFavorite = await checkIsFavorite(place.id);
-    
-    if (isFavorite) {
-      return await removeFavorite(place.id);
-    } else {
-      return await addToFavorites(place);
+    try {
+      const isFavorite = await isInFavorites(place.id);
+      
+      let updatedFavorites;
+      if (isFavorite) {
+        updatedFavorites = await removeFromFavorites(place.id);
+      } else {
+        updatedFavorites = await saveToFavorites(place);
+      }
+      
+      setFavorites(updatedFavorites);
+      return true;
+    } catch (err) {
+      setError(err.message);
+      return false;
     }
   };
   
@@ -91,8 +64,6 @@ export const useFavorites = () => {
     loading,
     error,
     loadFavorites,
-    addToFavorites,
-    removeFavorite,
     checkIsFavorite,
     toggleFavorite
   };
