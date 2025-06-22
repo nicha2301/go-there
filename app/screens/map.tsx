@@ -1,289 +1,316 @@
 import { Ionicons } from '@expo/vector-icons';
-import * as Location from 'expo-location';
-import { useRouter } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
+import { useLocalSearchParams, useNavigation } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
-import { Animated, Dimensions, StyleSheet, TouchableOpacity, View } from 'react-native';
-import { ActivityIndicator, Text } from 'react-native-paper';
-import { WebView } from 'react-native-webview';
-import { BORDER_RADIUS, COLORS, SHADOW, SPACING } from '../constants/theme';
+import {
+    ActivityIndicator,
+    Animated,
+    Dimensions,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View
+} from 'react-native';
+import MapView, { Marker, Polyline, PROVIDER_DEFAULT } from 'react-native-maps';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import theme from '../constants/theme';
+import { useLocation } from '../hooks/useLocation';
+import { useRoute } from '../hooks/useRoute';
 
 const { width, height } = Dimensions.get('window');
-const BOTTOM_SHEET_HEIGHT = 180;
+const CARD_HEIGHT = 220;
+const BOTTOM_SHEET_HEIGHT = 120;
 
 export default function MapScreen() {
-  const router = useRouter();
-  const webViewRef = useRef(null);
-  const [location, setLocation] = useState(null);
-  const [errorMsg, setErrorMsg] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [nearbyPlaces, setNearbyPlaces] = useState([
-    { id: '1', name: 'Nhà hàng ABC', distance: '1.2 km', category: 'restaurant' },
-    { id: '2', name: 'Quán cà phê XYZ', distance: '0.8 km', category: 'cafe' },
-    { id: '3', name: 'ATM VPBank', distance: '0.5 km', category: 'atm' },
-  ]);
+  const insets = useSafeAreaInsets();
+  const navigation = useNavigation();
+  const params = useLocalSearchParams();
+  
+  const [mapReady, setMapReady] = useState(false);
+  const [selectedPlace, setSelectedPlace] = useState(null);
+  const [markerCoords, setMarkerCoords] = useState(null);
+  const [transportMode, setTransportMode] = useState('driving');
+  
+  const mapRef = useRef(null);
+  const slideAnim = useRef(new Animated.Value(BOTTOM_SHEET_HEIGHT)).current;
+  
+  const { location, loading: locationLoading, error: locationError, startWatchingLocation } = useLocation();
+  const { route, loading: routeLoading, error: routeError, findRoute } = useRoute();
+  
+  const initialRegion = {
+    latitude: 10.762622,  // Vị trí mặc định TP.HCM
+    longitude: 106.660172,
+    latitudeDelta: 0.0922,
+    longitudeDelta: 0.0421,
+  };
 
-  const bottomSheetAnim = useRef(new Animated.Value(0)).current;
-
+  // Lấy vị trí ban đầu
   useEffect(() => {
-    (async () => {
-      setIsLoading(true);
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        setErrorMsg('Quyền truy cập vị trí bị từ chối!');
-        setIsLoading(false);
-        return;
-      }
-      
-      try {
-        const location = await Location.getCurrentPositionAsync({});
-        setLocation(location);
-      } catch (error) {
-        setErrorMsg('Không thể xác định vị trí của bạn.');
-      } finally {
-        setIsLoading(false);
-      }
-    })();
+    startWatchingLocation();
   }, []);
 
-  // Tạo HTML để hiển thị bản đồ OpenStreetMap
-  const getMapHtml = () => {
-    let lat = 10.762622;
-    let lng = 106.660172;
-    
-    if (location) {
-      lat = location.coords.latitude;
-      lng = location.coords.longitude;
+  // Zoom đến vị trí hiện tại khi có dữ liệu
+  useEffect(() => {
+    if (location && mapRef.current && mapReady) {
+      setTimeout(() => {
+        mapRef.current?.animateToRegion({
+          latitude: location.latitude,
+          longitude: location.longitude,
+          latitudeDelta: 0.005,
+          longitudeDelta: 0.005,
+        }, 1000);
+      }, 500);
     }
+  }, [location, mapReady]);
+  
+  // Xử lý params nếu có
+  useEffect(() => {
+    const handleParams = async () => {
+      // Hiển thị địa điểm được chọn từ màn hình tìm kiếm
+      if (params?.place) {
+        try {
+          const place = typeof params.place === 'string' 
+            ? JSON.parse(params.place)
+            : params.place;
+            
+          setSelectedPlace(place);
+          setMarkerCoords({
+            latitude: place.latitude,
+            longitude: place.longitude
+          });
+          
+          // Zoom đến địa điểm và tìm đường nếu có vị trí người dùng
+          if (location && mapRef.current) {
+            // Zoom đến khu vực bao gồm người dùng và địa điểm
+            zoomToTwoLocations(
+              { latitude: location.latitude, longitude: location.longitude },
+              { latitude: place.latitude, longitude: place.longitude }
+            );
+            
+            // Tìm đường đi
+            findRoute(
+              { latitude: location.latitude, longitude: location.longitude },
+              { latitude: place.latitude, longitude: place.longitude },
+              transportMode
+            );
+          }
+        } catch (error) {
+          console.error('Error parsing place data:', error);
+        }
+      }
+    };
     
-    return `
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <meta charset="utf-8" />
-          <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
-          <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
-          <style>
-            body, html, #map { height: 100%; margin: 0; padding: 0; }
-            .marker-pulse {
-              border-radius: 50%;
-              height: 14px;
-              width: 14px;
-              position: absolute;
-              left: 50%;
-              top: 50%;
-              margin: -7px 0 0 -7px;
-              background: ${COLORS.primary};
-              opacity: 1;
-              border: 2px solid white;
-              box-shadow: 0 0 8px rgba(0, 0, 0, 0.3);
-            }
-            .marker-pulse:after {
-              content: "";
-              border-radius: 50%;
-              height: 40px;
-              width: 40px;
-              position: absolute;
-              margin: -13px 0 0 -13px;
-              animation: pulsate 1.5s ease-out;
-              animation-iteration-count: infinite;
-              opacity: 0.0;
-              box-shadow: 0 0 6px ${COLORS.primary}, 0 0 6px ${COLORS.primary};
-              background: ${COLORS.primary};
-            }
-            @keyframes pulsate {
-              0% { transform: scale(0.2); opacity: 0.0; }
-              50% { opacity: 0.5; }
-              100% { transform: scale(1.0); opacity: 0.0; }
-            }
-          </style>
-        </head>
-        <body>
-          <div id="map"></div>
-          <script>
-            var map = L.map('map').setView([${lat}, ${lng}], 15);
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-              attribution: '© OpenStreetMap contributors'
-            }).addTo(map);
-            
-            // Đánh dấu vị trí hiện tại
-            var pulsingIcon = L.divIcon({
-              className: 'marker-pulse',
-              iconSize: [20, 20],
-              iconAnchor: [10, 10]
-            });
-            
-            var marker = L.marker([${lat}, ${lng}], {icon: pulsingIcon}).addTo(map);
-            
-            // Xử lý sự kiện từ React Native
-            window.handleMessage = function(message) {
-              const data = JSON.parse(message);
-              if (data.type === 'setCenter') {
-                map.setView([data.lat, data.lng], data.zoom || 15);
-              } else if (data.type === 'addMarker') {
-                L.marker([data.lat, data.lng])
-                  .addTo(map)
-                  .bindPopup(data.title || 'Địa điểm');
-              }
-            };
-          </script>
-        </body>
-      </html>
-    `;
+    handleParams();
+  }, [params, location]);
+  
+  // Tìm đường với phương tiện khác
+  const changeTransportMode = async (mode) => {
+    setTransportMode(mode);
+    
+    if (location && selectedPlace) {
+      await findRoute(
+        { latitude: location.latitude, longitude: location.longitude },
+        { latitude: selectedPlace.latitude, longitude: selectedPlace.longitude },
+        mode
+      );
+    }
   };
-
-  // Hàm gửi thông điệp đến WebView
-  const sendMessageToWebView = (message) => {
-    webViewRef.current?.injectJavaScript(`
-      window.handleMessage('${JSON.stringify(message)}');
-      true;
-    `);
+  
+  // Zoom bản đồ để hiển thị hai vị trí
+  const zoomToTwoLocations = (loc1, loc2) => {
+    if (!mapRef.current || !loc1 || !loc2) return;
+    
+    mapRef.current.fitToCoordinates(
+      [loc1, loc2],
+      {
+        edgePadding: { top: 100, right: 100, bottom: 200, left: 100 },
+        animated: true
+      }
+    );
   };
-
-  // Trung tâm lại bản đồ ở vị trí hiện tại
-  const centerToCurrentLocation = () => {
-    if (location) {
-      sendMessageToWebView({
-        type: 'setCenter',
-        lat: location.coords.latitude,
-        lng: location.coords.longitude,
-        zoom: 18
+  
+  // Chuyển đến màn hình chỉ đường chi tiết
+  const navigateToDirections = () => {
+    if (location && selectedPlace && route) {
+      navigation.navigate('RouteDirections', {
+        startLocation: {
+          latitude: location.latitude,
+          longitude: location.longitude
+        },
+        endLocation: {
+          latitude: selectedPlace.latitude,
+          longitude: selectedPlace.longitude
+        },
+        place: selectedPlace,
+        route: route
       });
     }
   };
-
+  
+  // Đóng/mở bottom sheet
   const toggleBottomSheet = () => {
-    Animated.timing(bottomSheetAnim, {
-      toValue: bottomSheetAnim._value === 0 ? 1 : 0,
-      duration: 250,
-      useNativeDriver: true,
+    Animated.timing(slideAnim, {
+      toValue: route ? height - 300 : BOTTOM_SHEET_HEIGHT,
+      duration: 300,
+      useNativeDriver: false,
     }).start();
   };
 
-  const translateY = bottomSheetAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [BOTTOM_SHEET_HEIGHT - 40, 0],
-  });
-
   return (
     <View style={styles.container}>
-      <StatusBar style="light" />
-      
-      {/* Map */}
-      <View style={styles.mapContainer}>
-        {isLoading ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={COLORS.primary} />
-            <Text style={styles.loadingText}>Đang tải bản đồ...</Text>
-          </View>
-        ) : errorMsg ? (
-          <View style={styles.errorContainer}>
-            <Ionicons name="alert-circle-outline" size={48} color={COLORS.error} />
-            <Text style={styles.errorText}>{errorMsg}</Text>
-          </View>
-        ) : (
-          <WebView
-            ref={webViewRef}
-            originWhitelist={['*']}
-            source={{ html: getMapHtml() }}
-            style={styles.map}
-            javaScriptEnabled={true}
-            domStorageEnabled={true}
-            startInLoadingState={true}
-            scalesPageToFit={true}
+      {/* Bản đồ */}
+      <MapView
+        ref={mapRef}
+        style={styles.map}
+        provider={PROVIDER_DEFAULT}
+        initialRegion={initialRegion}
+        showsUserLocation
+        showsMyLocationButton={false}
+        toolbarEnabled={false}
+        showsCompass={false}
+        showsScale={true}
+        onMapReady={() => setMapReady(true)}
+      >
+        {/* Marker cho địa điểm được chọn */}
+        {markerCoords && (
+          <Marker coordinate={markerCoords} title={selectedPlace?.name}>
+            <View style={styles.markerContainer}>
+              <Ionicons name="location" size={32} color={theme.colors.primary} />
+            </View>
+          </Marker>
+        )}
+        
+        {/* Polyline cho đường đi */}
+        {route && route.geometry && (
+          <Polyline
+            coordinates={route.geometry.coordinates.map(coord => ({
+              latitude: coord[1],
+              longitude: coord[0]
+            }))}
+            strokeWidth={4}
+            strokeColor={theme.colors.primary}
           />
         )}
-      </View>
-      
-      {/* Search bar overlay */}
-      <View style={styles.searchOverlay}>
-        <TouchableOpacity 
-          style={styles.backButton}
-          onPress={() => router.back()}
-        >
-          <Ionicons name="chevron-back" size={24} color={COLORS.darkText} />
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={styles.searchBar}
-          onPress={() => router.push('/screens/search')}
-        >
-          <Ionicons name="search" size={18} color={COLORS.grayText} />
-          <Text style={styles.searchText}>Tìm địa điểm...</Text>
-        </TouchableOpacity>
-      </View>
-      
-      {/* Map controls */}
-      <View style={styles.mapControls}>
-        <TouchableOpacity 
-          style={styles.mapControlButton}
-          onPress={centerToCurrentLocation}
-        >
-          <Ionicons name="locate" size={22} color={COLORS.darkText} />
-        </TouchableOpacity>
-        <TouchableOpacity 
-          style={styles.mapControlButton}
-          onPress={toggleBottomSheet}
-        >
-          <Ionicons name="layers-outline" size={22} color={COLORS.darkText} />
-        </TouchableOpacity>
-      </View>
-      
-      {/* Bottom sheet with nearby places */}
-      <Animated.View 
-        style={[
-          styles.bottomSheet,
-          { transform: [{ translateY }] }
-        ]}
+      </MapView>
+
+      {/* Nút back */}
+      <TouchableOpacity 
+        style={[styles.backButton, { top: insets.top + 10 }]} 
+        onPress={() => navigation.goBack()}
       >
-        <TouchableOpacity 
-          style={styles.bottomSheetHandle}
-          onPress={toggleBottomSheet}
-        >
+        <Ionicons name="arrow-back" size={24} color={theme.colors.text} />
+      </TouchableOpacity>
+
+      {/* Nút vị trí hiện tại */}
+      <TouchableOpacity 
+        style={[styles.myLocationButton, { bottom: route ? 300 : BOTTOM_SHEET_HEIGHT + 20 }]}
+        onPress={() => {
+          if (location) {
+            mapRef.current?.animateToRegion({
+              latitude: location.latitude,
+              longitude: location.longitude,
+              latitudeDelta: 0.005,
+              longitudeDelta: 0.005,
+            }, 500);
+          }
+        }}
+      >
+        <Ionicons name="locate" size={24} color={theme.colors.primary} />
+      </TouchableOpacity>
+      
+      {/* Loading indicator */}
+      {(locationLoading || routeLoading) && (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={theme.colors.primary} />
+        </View>
+      )}
+      
+      {/* Bottom sheet info */}
+      <Animated.View style={[styles.bottomSheet, { height: slideAnim }]}>
+        {/* Handle để kéo mở bottom sheet */}
+        <TouchableOpacity style={styles.sheetHandle} onPress={toggleBottomSheet}>
           <View style={styles.handle} />
         </TouchableOpacity>
-        
-        <Text style={styles.bottomSheetTitle}>Địa điểm gần đây</Text>
-        
-        <View style={styles.placesList}>
-          {nearbyPlaces.map(place => (
+
+        {/* Thông tin địa điểm */}
+        {selectedPlace && (
+          <View style={styles.placeInfo}>
+            <Text style={styles.placeName}>{selectedPlace.name}</Text>
+            <Text style={styles.placeAddress} numberOfLines={2}>
+              {selectedPlace.address}
+            </Text>
+            
+            {/* Thông tin lộ trình nếu có */}
+            {route && (
+              <View style={styles.routeInfo}>
+                <View style={styles.routeStats}>
+                  <View style={styles.routeStat}>
+                    <Ionicons name="time-outline" size={18} color={theme.colors.primary} />
+                    <Text style={styles.routeStatValue}>{route.formattedDuration}</Text>
+                  </View>
+                  <View style={styles.routeStat}>
+                    <Ionicons name="resize-outline" size={18} color={theme.colors.primary} />
+                    <Text style={styles.routeStatValue}>{route.formattedDistance}</Text>
+                  </View>
+                </View>
+                
+                {/* Các phương tiện giao thông */}
+                <View style={styles.transportModes}>
+                  <TouchableOpacity
+                    style={[
+                      styles.transportButton,
+                      transportMode === 'driving' && styles.transportButtonActive
+                    ]}
+                    onPress={() => changeTransportMode('driving')}
+                  >
+                    <Ionicons 
+                      name="car" 
+                      size={20} 
+                      color={transportMode === 'driving' ? 'white' : theme.colors.text} 
+                    />
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity
+                    style={[
+                      styles.transportButton,
+                      transportMode === 'walking' && styles.transportButtonActive
+                    ]}
+                    onPress={() => changeTransportMode('walking')}
+                  >
+                    <Ionicons 
+                      name="walk" 
+                      size={20} 
+                      color={transportMode === 'walking' ? 'white' : theme.colors.text} 
+                    />
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity
+                    style={[
+                      styles.transportButton,
+                      transportMode === 'cycling' && styles.transportButtonActive
+                    ]}
+                    onPress={() => changeTransportMode('cycling')}
+                  >
+                    <Ionicons 
+                      name="bicycle" 
+                      size={20} 
+                      color={transportMode === 'cycling' ? 'white' : theme.colors.text} 
+                    />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+            
+            {/* Nút điều hướng */}
             <TouchableOpacity 
-              key={place.id}
-              style={styles.placeItem}
-              onPress={() => {
-                // Navigate to place details or show on map
-              }}
+              style={styles.directionButton}
+              onPress={navigateToDirections}
             >
-              <View style={styles.placeIconContainer}>
-                <Ionicons 
-                  name={
-                    place.category === 'restaurant' ? 'restaurant-outline' :
-                    place.category === 'cafe' ? 'cafe-outline' : 'card-outline'
-                  }
-                  size={20} 
-                  color={COLORS.primary} 
-                />
-              </View>
-              <View style={styles.placeInfo}>
-                <Text style={styles.placeName}>{place.name}</Text>
-                <Text style={styles.placeDistance}>{place.distance}</Text>
-              </View>
-              <TouchableOpacity style={styles.directionButton}>
-                <Ionicons name="navigate-outline" size={20} color={COLORS.primary} />
-              </TouchableOpacity>
+              <Ionicons name="navigate" size={18} color="white" />
+              <Text style={styles.directionButtonText}>Chỉ đường chi tiết</Text>
             </TouchableOpacity>
-          ))}
-        </View>
+          </View>
+        )}
       </Animated.View>
-      
-      {/* FAB */}
-      <TouchableOpacity 
-        style={styles.fab}
-        onPress={() => router.push('/screens/search')}
-      >
-        <Ionicons name="add" size={26} color="#fff" />
-      </TouchableOpacity>
     </View>
   );
 }
@@ -291,157 +318,135 @@ export default function MapScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.background,
-  },
-  mapContainer: {
-    flex: 1,
+    backgroundColor: theme.colors.background,
   },
   map: {
     flex: 1,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: COLORS.background,
-  },
-  loadingText: {
-    marginTop: SPACING.medium,
-    color: COLORS.text,
-  },
-  errorContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: COLORS.background,
-    padding: SPACING.large,
-  },
-  errorText: {
-    marginTop: SPACING.medium,
-    color: COLORS.error,
-    textAlign: 'center',
-  },
-  searchOverlay: {
-    position: 'absolute',
-    top: 50,
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: SPACING.medium,
-    gap: SPACING.small,
+    width: '100%',
+    height: '100%',
   },
   backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: BORDER_RADIUS.round,
-    backgroundColor: COLORS.background,
-    alignItems: 'center',
-    justifyContent: 'center',
-    ...SHADOW.medium,
-  },
-  searchBar: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-    borderRadius: BORDER_RADIUS.large,
-    paddingVertical: SPACING.small,
-    paddingHorizontal: SPACING.medium,
-    flexDirection: 'row',
-    alignItems: 'center',
-    ...SHADOW.medium,
-  },
-  searchText: {
-    color: COLORS.grayText,
-    marginLeft: SPACING.small,
-    fontSize: 15,
-  },
-  mapControls: {
     position: 'absolute',
-    right: SPACING.medium,
-    top: 120,
-    gap: SPACING.small,
-  },
-  mapControlButton: {
+    left: 16,
     width: 40,
     height: 40,
-    borderRadius: BORDER_RADIUS.round,
-    backgroundColor: COLORS.background,
+    borderRadius: theme.radius.circle,
+    backgroundColor: 'white',
+    justifyContent: 'center',
+    alignItems: 'center',
+    ...theme.shadow.medium,
+  },
+  myLocationButton: {
+    position: 'absolute',
+    right: 16,
+    width: 46,
+    height: 46,
+    borderRadius: theme.radius.circle,
+    backgroundColor: 'white',
+    justifyContent: 'center',
+    alignItems: 'center',
+    ...theme.shadow.medium,
+  },
+  markerContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    ...SHADOW.medium,
+  },
+  loadingContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.4)',
   },
   bottomSheet: {
     position: 'absolute',
+    bottom: 0,
     left: 0,
     right: 0,
-    bottom: -SPACING.medium,
-    height: BOTTOM_SHEET_HEIGHT,
-    backgroundColor: COLORS.background,
-    borderTopLeftRadius: BORDER_RADIUS.large,
-    borderTopRightRadius: BORDER_RADIUS.large,
-    padding: SPACING.medium,
-    ...SHADOW.large,
+    backgroundColor: 'white',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 20,
+    ...theme.shadow.large,
   },
-  bottomSheetHandle: {
+  sheetHandle: {
     alignItems: 'center',
-    paddingVertical: SPACING.small,
+    paddingBottom: 10,
   },
   handle: {
     width: 40,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: COLORS.border,
-  },
-  bottomSheetTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: SPACING.medium,
-    color: COLORS.darkText,
-  },
-  placesList: {
-    gap: SPACING.small,
-  },
-  placeItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: SPACING.small,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
-  },
-  placeIconContainer: {
-    width: 36,
-    height: 36,
-    borderRadius: BORDER_RADIUS.medium,
-    backgroundColor: COLORS.lightBackground,
-    alignItems: 'center',
-    justifyContent: 'center',
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: theme.colors.border,
   },
   placeInfo: {
-    flex: 1,
-    marginLeft: SPACING.medium,
+    marginTop: 10,
   },
   placeName: {
-    fontSize: 15,
-    fontWeight: '500',
-    color: COLORS.text,
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: theme.colors.text,
   },
-  placeDistance: {
-    fontSize: 13,
-    color: COLORS.grayText,
+  placeAddress: {
+    fontSize: 14,
+    color: theme.colors.textSecondary,
+    marginTop: 4,
+  },
+  routeInfo: {
+    marginTop: 15,
+    padding: 12,
+    backgroundColor: theme.colors.card,
+    borderRadius: theme.radius.medium,
+  },
+  routeStats: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginBottom: 12,
+  },
+  routeStat: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  routeStatValue: {
+    marginLeft: 6,
+    fontSize: 16,
+    fontWeight: '600',
+    color: theme.colors.text,
+  },
+  transportModes: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginTop: 10,
+  },
+  transportButton: {
+    width: 44,
+    height: 44,
+    borderRadius: theme.radius.circle,
+    backgroundColor: theme.colors.lightGrey,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginHorizontal: 10,
+  },
+  transportButtonActive: {
+    backgroundColor: theme.colors.primary,
   },
   directionButton: {
-    padding: SPACING.small,
-  },
-  fab: {
-    position: 'absolute',
-    right: SPACING.large,
-    bottom: BOTTOM_SHEET_HEIGHT + SPACING.medium,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: COLORS.primary,
-    alignItems: 'center',
+    flexDirection: 'row',
     justifyContent: 'center',
-    ...SHADOW.medium,
+    alignItems: 'center',
+    backgroundColor: theme.colors.primary,
+    borderRadius: theme.radius.medium,
+    paddingVertical: 14,
+    marginTop: 20,
+    ...theme.shadow.small,
+  },
+  directionButtonText: {
+    color: 'white',
+    fontWeight: 'bold',
+    fontSize: 16,
+    marginLeft: 8,
   },
 }); 

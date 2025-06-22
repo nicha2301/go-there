@@ -1,9 +1,14 @@
+import { NavigationContainer } from '@react-navigation/native';
 import * as Location from 'expo-location';
-import { Stack } from 'expo-router';
+import { Slot } from 'expo-router';
+import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect } from 'react';
+import React, { useEffect } from 'react';
 import { PaperProvider } from 'react-native-paper';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+
+// Giữ màn hình splash hiển thị cho đến khi ứng dụng sẵn sàng
+SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
   useEffect(() => {
@@ -14,23 +19,22 @@ export default function RootLayout() {
         console.log('Quyền truy cập vị trí bị từ chối!');
       }
     })();
+
+    // Ẩn splash screen sau khi giao diện người dùng đã được tải
+    const hideSplash = async () => {
+      await SplashScreen.hideAsync();
+    };
+    
+    hideSplash();
   }, []);
 
   return (
     <SafeAreaProvider>
       <PaperProvider>
-        <StatusBar style="auto" />
-        <Stack
-          screenOptions={{
-            headerShown: false,
-          }}
-        >
-          <Stack.Screen name="index" />
-          <Stack.Screen name="screens/map" />
-          <Stack.Screen name="screens/search" />
-          <Stack.Screen name="screens/history" />
-          <Stack.Screen name="screens/favorites" />
-        </Stack>
+        <StatusBar style="dark" />
+        <NavigationContainer independent>
+          <Slot />
+        </NavigationContainer>
       </PaperProvider>
     </SafeAreaProvider>
   );

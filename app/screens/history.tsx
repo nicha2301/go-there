@@ -1,275 +1,279 @@
-import { useRouter } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
-import React, { useState } from 'react';
-import { FlatList, StyleSheet, View } from 'react-native';
-import { Button, Card, Divider, FAB, IconButton, Text } from 'react-native-paper';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { CATEGORY_ICONS, COLORS, SPACING } from '../constants/theme';
-
-// Mock data - trong thực tế sẽ lấy từ AsyncStorage
-const mockHistoryItems = [
-  {
-    id: '1',
-    name: 'Nhà hàng ABC',
-    address: '123 Đường Nguyễn Huệ, Quận 1, TP.HCM',
-    category: 'restaurant',
-    timestamp: '22/06/2024 14:30',
-  },
-  {
-    id: '2',
-    name: 'Quán Café XYZ',
-    address: '456 Đường Lê Lợi, Quận 1, TP.HCM',
-    category: 'cafe',
-    timestamp: '22/06/2024 10:15',
-  },
-  {
-    id: '3',
-    name: 'Ngân hàng VPBank',
-    address: '789 Đường Đồng Khởi, Quận 1, TP.HCM',
-    category: 'bank',
-    timestamp: '21/06/2024 17:45',
-  },
-  {
-    id: '4',
-    name: 'ATM Vietcombank',
-    address: '101 Đường Lý Tự Trọng, Quận 1, TP.HCM',
-    category: 'atm',
-    timestamp: '20/06/2024 09:20',
-  },
-  {
-    id: '5',
-    name: 'Bệnh viện Chợ Rẫy',
-    address: '201 Đường Nguyễn Chí Thanh, Quận 5, TP.HCM',
-    category: 'hospital',
-    timestamp: '19/06/2024 15:10',
-  },
-];
+import { Ionicons } from '@expo/vector-icons';
+import { useNavigation } from 'expo-router';
+import React, { useEffect, useState } from 'react';
+import {
+    ActivityIndicator,
+    Alert,
+    FlatList,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import PlaceItem from '../components/PlaceItem';
+import theme from '../constants/theme';
+import { useFavorites } from '../hooks/useFavorites';
+import { usePlaces } from '../hooks/usePlaces';
+import { clearHistory, removeFromHistory } from '../services/storageService';
 
 export default function HistoryScreen() {
-  const router = useRouter();
-  const [historyItems, setHistoryItems] = useState(mockHistoryItems);
-
-  const navigateToPlace = (item) => {
-    // Trong thực tế, điều hướng đến bản đồ với marker ở vị trí này
-    console.log('Navigating to:', item);
-    // router.push({ pathname: '/screens/map', params: { placeId: place.id } });
+  const insets = useSafeAreaInsets();
+  const navigation = useNavigation();
+  const { loadHistory, history, loading } = usePlaces();
+  const { checkIsFavorite, toggleFavorite } = useFavorites();
+  
+  const [favorites, setFavorites] = useState({});
+  
+  // Load dữ liệu khi màn hình được mở
+  useEffect(() => {
+    loadHistory();
+    
+    // Thêm listener để load lại khi focus vào màn hình này
+    const unsubscribe = navigation.addListener('focus', () => {
+      loadHistory();
+    });
+    
+    // Cleanup
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+  
+  // Cập nhật trạng thái yêu thích của từng địa điểm
+  useEffect(() => {
+    const updateFavoriteStatus = async () => {
+      const favoriteStatus = {};
+      
+      for (const place of history) {
+        favoriteStatus[place.id] = await checkIsFavorite(place.id);
+      }
+      
+      setFavorites(favoriteStatus);
+    };
+    
+    if (history.length > 0) {
+      updateFavoriteStatus();
+    }
+  }, [history]);
+  
+  // Xử lý khi chọn một địa điểm
+  const handleSelectPlace = (place) => {
+    navigation.navigate('PlaceDetail', { place });
   };
-
-  const clearHistory = () => {
-    // Trong thực tế, xóa dữ liệu từ AsyncStorage
-    setHistoryItems([]);
+  
+  // Xử lý khi toggle trạng thái yêu thích
+  const handleToggleFavorite = async (place) => {
+    await toggleFavorite(place);
+    setFavorites(prev => ({
+      ...prev,
+      [place.id]: !prev[place.id]
+    }));
   };
-
-  const removeHistoryItem = (id) => {
-    // Trong thực tế, cập nhật AsyncStorage
-    setHistoryItems(historyItems.filter(item => item.id !== id));
+  
+  // Xử lý xóa một mục khỏi lịch sử
+  const handleRemoveHistoryItem = async (placeId) => {
+    await removeFromHistory(placeId);
+    loadHistory();
   };
+  
+  // Xử lý xóa toàn bộ lịch sử
+  const handleClearHistory = () => {
+    Alert.alert(
+      "Xóa lịch sử",
+      "Bạn có chắc muốn xóa toàn bộ lịch sử tìm kiếm?",
+      [
+        {
+          text: "Hủy",
+          style: "cancel"
+        },
+        {
+          text: "Xóa",
+          style: "destructive",
+          onPress: async () => {
+            await clearHistory();
+            loadHistory();
+          }
+        }
+      ]
+    );
+  };
+  
+  // Định dạng thời gian
+  const formatTime = (timestamp) => {
+    const date = new Date(timestamp);
+    const now = new Date();
+    
+    // Nếu cùng ngày, hiển thị giờ
+    if (date.toDateString() === now.toDateString()) {
+      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+    
+    // Nếu cùng tuần, hiển thị thứ
+    const daysDiff = Math.floor((now - date) / (1000 * 60 * 60 * 24));
+    if (daysDiff < 7) {
+      const days = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
+      return `${days[date.getDay()]}, ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+    }
+    
+    // Khác thì hiển thị ngày tháng
+    return date.toLocaleDateString();
+  };
+  
+  // Render mỗi item trong danh sách
+  const renderItem = ({ item }) => (
+    <View style={styles.historyItem}>
+      <View style={styles.timestampContainer}>
+        <Text style={styles.timestamp}>{formatTime(item.timestamp)}</Text>
+      </View>
+      
+      <View style={styles.placeItemContainer}>
+        <PlaceItem
+          place={item}
+          isFavorite={favorites[item.id] || false}
+          onFavoriteToggle={handleToggleFavorite}
+          onPress={() => handleSelectPlace(item)}
+        />
+        
+        <TouchableOpacity 
+          style={styles.deleteButton}
+          onPress={() => handleRemoveHistoryItem(item.id)}
+        >
+          <Ionicons name="close-circle" size={22} color={theme.colors.error} />
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar style="auto" />
-      
-      {/* Header */}
+    <View style={[styles.container, { paddingTop: insets.top }]}>
       <View style={styles.header}>
-        <IconButton
-          icon="arrow-left"
-          mode="contained"
-          containerColor={COLORS.card}
-          iconColor={COLORS.primary}
-          size={24}
-          onPress={() => router.back()}
-        />
-        <Text variant="titleLarge" style={styles.headerTitle}>Lịch Sử Tìm Kiếm</Text>
-        <IconButton
-          icon="delete-outline"
-          mode="contained"
-          containerColor={COLORS.card}
-          iconColor={COLORS.primary}
-          size={24}
-          onPress={clearHistory}
-          disabled={historyItems.length === 0}
-        />
-      </View>
-      
-      {/* History List */}
-      <View style={styles.content}>
-        {historyItems.length > 0 ? (
-          <FlatList
-            data={historyItems}
-            keyExtractor={(item) => item.id}
-            contentContainerStyle={styles.listContainer}
-            ItemSeparatorComponent={() => <Divider style={styles.divider} />}
-            renderItem={({ item }) => (
-              <Card style={styles.historyCard} mode="outlined">
-                <Card.Content>
-                  <View style={styles.cardHeader}>
-                    <IconButton
-                      icon={CATEGORY_ICONS[item.category] || 'map-marker'}
-                      size={24}
-                      iconColor={COLORS.primary}
-                      style={styles.categoryIcon}
-                    />
-                    <View style={styles.cardInfo}>
-                      <Text variant="titleMedium" style={styles.placeName}>{item.name}</Text>
-                      <Text variant="bodyMedium" style={styles.placeAddress}>{item.address}</Text>
-                    </View>
-                    <IconButton
-                      icon="close"
-                      size={16}
-                      iconColor={COLORS.text}
-                      onPress={() => removeHistoryItem(item.id)}
-                    />
-                  </View>
-                  <Text variant="bodySmall" style={styles.timestamp}>{item.timestamp}</Text>
-                </Card.Content>
-                <Card.Actions style={styles.cardActions}>
-                  <Button
-                    mode="contained-tonal"
-                    icon="directions"
-                    onPress={() => navigateToPlace(item)}
-                    style={styles.directionButton}
-                  >
-                    Chỉ đường
-                  </Button>
-                </Card.Actions>
-              </Card>
-            )}
-          />
-        ) : (
-          <View style={styles.emptyContainer}>
-            <IconButton
-              icon="history"
-              size={64}
-              iconColor={COLORS.border}
-            />
-            <Text variant="headlineSmall" style={styles.emptyTitle}>Chưa có lịch sử</Text>
-            <Text variant="bodyMedium" style={styles.emptySubtitle}>
-              Các địa điểm bạn tìm kiếm sẽ xuất hiện ở đây
-            </Text>
-            <Button
-              mode="contained"
-              icon="magnify"
-              onPress={() => router.replace('/screens/search')}
-              style={styles.searchButton}
-              contentStyle={styles.buttonContent}
-            >
-              Tìm kiếm địa điểm
-            </Button>
-          </View>
+        <Text style={styles.headerTitle}>Lịch sử tìm kiếm</Text>
+        
+        {history.length > 0 && (
+          <TouchableOpacity onPress={handleClearHistory}>
+            <Text style={styles.clearText}>Xóa tất cả</Text>
+          </TouchableOpacity>
         )}
       </View>
-      
-      {/* FAB để quay về màn hình bản đồ */}
-      <FAB
-        icon="map-outline"
-        label="Xem bản đồ"
-        style={styles.fab}
-        onPress={() => router.push('/screens/map')}
-        color="white"
-      />
-    </SafeAreaView>
+
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={theme.colors.primary} />
+        </View>
+      ) : (
+        <FlatList
+          data={history}
+          renderItem={renderItem}
+          keyExtractor={(item) => item.id.toString()}
+          contentContainerStyle={styles.listContainer}
+          showsVerticalScrollIndicator={false}
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+              <Ionicons name="time" size={64} color={theme.colors.lightGrey} />
+              <Text style={styles.emptyText}>Lịch sử tìm kiếm trống</Text>
+              <Text style={styles.emptySubText}>
+                Các địa điểm bạn tìm kiếm sẽ xuất hiện ở đây để truy cập nhanh sau này.
+              </Text>
+              
+              <TouchableOpacity 
+                style={styles.exploreButton}
+                onPress={() => navigation.navigate('search')}
+              >
+                <Text style={styles.exploreButtonText}>Tìm kiếm địa điểm</Text>
+              </TouchableOpacity>
+            </View>
+          }
+        />
+      )}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.background,
+    backgroundColor: theme.colors.background,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: SPACING.medium,
-    paddingVertical: SPACING.small,
-    backgroundColor: COLORS.card,
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
   },
   headerTitle: {
-    color: COLORS.text,
+    fontSize: 24,
     fontWeight: 'bold',
+    color: theme.colors.text,
   },
-  content: {
-    flex: 1,
+  clearText: {
+    fontSize: 14,
+    color: theme.colors.error,
+    fontWeight: 'bold',
   },
   listContainer: {
-    paddingHorizontal: SPACING.medium,
-    paddingVertical: SPACING.medium,
+    padding: 16,
+    paddingTop: 8,
   },
-  historyCard: {
-    marginBottom: SPACING.medium,
-    backgroundColor: COLORS.card,
-    borderColor: COLORS.border,
-    borderRadius: 12,
-  },
-  cardHeader: {
-    flexDirection: 'row',
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
     alignItems: 'center',
   },
-  cardInfo: {
-    flex: 1,
-    marginLeft: SPACING.small,
+  historyItem: {
+    marginBottom: 20,
   },
-  placeName: {
-    fontWeight: 'bold',
-    color: COLORS.text,
-  },
-  placeAddress: {
-    color: COLORS.text,
-    opacity: 0.7,
+  timestampContainer: {
+    paddingHorizontal: 12,
+    marginBottom: 6,
   },
   timestamp: {
-    marginTop: SPACING.small,
-    color: COLORS.text,
-    opacity: 0.5,
+    fontSize: 12,
+    color: theme.colors.textSecondary,
+    fontWeight: '500',
   },
-  categoryIcon: {
-    margin: 0,
+  placeItemContainer: {
+    position: 'relative',
   },
-  cardActions: {
-    justifyContent: 'flex-end',
-  },
-  directionButton: {
-    borderRadius: 8,
-  },
-  divider: {
-    height: 1,
-    backgroundColor: COLORS.border,
-    marginVertical: SPACING.small,
+  deleteButton: {
+    position: 'absolute',
+    top: -8,
+    right: -8,
+    backgroundColor: theme.colors.background,
+    borderRadius: 12,
+    padding: 2,
   },
   emptyContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: SPACING.large,
+    padding: 32,
+    marginTop: 50,
   },
-  emptyTitle: {
-    marginTop: SPACING.medium,
-    color: COLORS.text,
+  emptyText: {
+    fontSize: 18,
     fontWeight: 'bold',
-  },
-  emptySubtitle: {
+    color: theme.colors.text,
+    marginTop: 16,
     textAlign: 'center',
-    marginTop: SPACING.small,
-    marginBottom: SPACING.large,
-    color: COLORS.text,
-    opacity: 0.7,
   },
-  searchButton: {
-    borderRadius: 8,
+  emptySubText: {
+    fontSize: 14,
+    color: theme.colors.textSecondary,
+    textAlign: 'center',
+    marginTop: 8,
   },
-  buttonContent: {
-    paddingHorizontal: SPACING.medium,
-    paddingVertical: SPACING.small,
+  exploreButton: {
+    marginTop: 24,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    backgroundColor: theme.colors.primary,
+    borderRadius: theme.radius.medium,
+    ...theme.shadow.small,
   },
-  fab: {
-    position: 'absolute',
-    right: SPACING.large,
-    bottom: SPACING.large,
-    backgroundColor: COLORS.primary,
+  exploreButtonText: {
+    color: 'white',
+    fontWeight: 'bold',
   },
 }); 
