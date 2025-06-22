@@ -96,4 +96,6 @@ export const useFavorites = () => {
     checkIsFavorite,
     toggleFavorite
   };
-}; 
+};
+
+export default useFavorites; 

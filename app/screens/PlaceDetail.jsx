@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useNavigation } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
+    ActivityIndicator,
     Linking,
     ScrollView,
     Share,
@@ -17,13 +18,14 @@ import { useFavorites } from '../hooks/useFavorites';
 import { useLocation } from '../hooks/useLocation';
 import { useRoute } from '../hooks/useRoute';
 
-export default function PlaceDetail() {
+const PlaceDetail = () => {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
   const params = useLocalSearchParams();
   
   const [place, setPlace] = useState(null);
   const [isFavorite, setIsFavorite] = useState(false);
+  const [loading, setLoading] = useState(true);
   
   const { location } = useLocation();
   const { findRoute } = useRoute();
@@ -50,6 +52,7 @@ export default function PlaceDetail() {
         console.error('Error parsing place data:', error);
       }
     }
+    setLoading(false);
   }, [params]);
   
   // Xử lý toggle yêu thích
@@ -109,11 +112,26 @@ export default function PlaceDetail() {
     }
   };
 
-  // Nếu không có dữ liệu địa điểm, hiển thị trạng thái loading
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={theme.colors.primary} />
+        <Text style={styles.loadingText}>Đang tải...</Text>
+      </View>
+    );
+  }
+
   if (!place) {
     return (
-      <View style={[styles.container, styles.loadingContainer]}>
-        <Text style={styles.loadingText}>Đang tải thông tin...</Text>
+      <View style={styles.errorContainer}>
+        <Ionicons name="alert-circle" size={48} color={theme.colors.error} />
+        <Text style={styles.errorText}>Không tìm thấy thông tin địa điểm</Text>
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() => navigation.goBack()}
+        >
+          <Text style={styles.backButtonText}>Quay lại</Text>
+        </TouchableOpacity>
       </View>
     );
   }
@@ -253,7 +271,7 @@ export default function PlaceDetail() {
       </View>
     </View>
   );
-}
+};
 
 const styles = StyleSheet.create({
   container: {
@@ -261,12 +279,14 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.background,
   },
   loadingContainer: {
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
   loadingText: {
+    marginTop: 16,
     fontSize: 16,
-    color: theme.colors.textSecondary,
+    color: theme.colors.text,
   },
   header: {
     flexDirection: 'row',
@@ -410,4 +430,25 @@ const styles = StyleSheet.create({
     fontSize: 16,
     marginLeft: 8,
   },
-}); 
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+    backgroundColor: theme.colors.background
+  },
+  errorText: {
+    fontSize: 16,
+    color: theme.colors.text,
+    textAlign: 'center',
+    marginTop: 16,
+    marginBottom: 24
+  },
+  backButtonText: {
+    color: theme.colors.primary,
+    fontSize: 16,
+    fontWeight: '500'
+  }
+});
+
+export default PlaceDetail; 

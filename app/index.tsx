@@ -13,7 +13,7 @@ import SearchScreen from './screens/search';
 // Tạo tab navigator
 const Tab = createBottomTabNavigator();
 
-export default function AppLayout() {
+const AppLayout = () => {
   const insets = useSafeAreaInsets();
   
   return (
@@ -82,4 +82,6 @@ export default function AppLayout() {
       />
     </Tab.Navigator>
   );
-}
+};
+
+export default AppLayout;

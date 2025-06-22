@@ -1,6 +1,5 @@
 import * as Location from 'expo-location';
 
-// Lấy vị trí hiện tại
 export const getCurrentLocation = async () => {
   try {
     const { status } = await Location.requestForegroundPermissionsAsync();
@@ -20,26 +19,38 @@ export const getCurrentLocation = async () => {
   }
 };
 
-// Tìm kiếm địa điểm với Nominatim API
+export const deg2rad = (deg) => {
+  return deg * (Math.PI/180);
+};
+
+export const calculateDistance = (point1, point2) => {
+  const R = 6371;
+  const dLat = deg2rad(point2.latitude - point1.latitude);
+  const dLon = deg2rad(point2.longitude - point1.longitude);
+  
+  const a = 
+    Math.sin(dLat/2) * Math.sin(dLat/2) +
+    Math.cos(deg2rad(point1.latitude)) * Math.cos(deg2rad(point2.latitude)) * 
+    Math.sin(dLon/2) * Math.sin(dLon/2);
+  
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
+};
+
 export const searchPlaces = async (query, { lat, lng } = {}, category = null) => {
   try {
-    // Xây dựng URL tìm kiếm
     const baseUrl = 'https://nominatim.openstreetmap.org/search';
     let searchUrl = `${baseUrl}?format=json&addressdetails=1&limit=10`;
     
-    // Thêm query
     if (query && query.length > 0) {
       searchUrl += `&q=${encodeURIComponent(query)}`;
     }
     
-    // Thêm vị trí hiện tại (để tìm gần đây)
     if (lat && lng) {
       searchUrl += `&lat=${lat}&lon=${lng}`;
     }
     
-    // Thêm danh mục (amenity trong Nominatim)
     if (category) {
-      // Map category từ app sang OSM amenity
       const amenityMap = {
         restaurant: 'restaurant',
         cafe: 'cafe',
@@ -53,7 +64,6 @@ export const searchPlaces = async (query, { lat, lng } = {}, category = null) =>
       searchUrl += `&amenity=${osmCategory}`;
     }
     
-    // Thêm user agent theo yêu cầu của Nominatim
     const response = await fetch(searchUrl, {
       headers: {
         'User-Agent': 'GoThereApp/1.0'
@@ -66,9 +76,7 @@ export const searchPlaces = async (query, { lat, lng } = {}, category = null) =>
     
     const data = await response.json();
     
-    // Chuyển đổi dữ liệu
     return data.map(item => {
-      // Xác định danh mục
       let category = 'other';
       if (item.class === 'amenity') {
         if (['restaurant', 'food_court', 'fast_food'].includes(item.type)) {
@@ -88,7 +96,6 @@ export const searchPlaces = async (query, { lat, lng } = {}, category = null) =>
         }
       }
       
-      // Tính khoảng cách nếu có vị trí hiện tại
       let distance = '';
       if (lat && lng) {
         const distanceKm = calculateDistance(
@@ -108,7 +115,7 @@ export const searchPlaces = async (query, { lat, lng } = {}, category = null) =>
         longitude: parseFloat(item.lon),
         category,
         distance,
-        rating: 0, // Nominatim không cung cấp rating
+        rating: 0, // 
       };
     });
   } catch (error) {
@@ -117,26 +124,6 @@ export const searchPlaces = async (query, { lat, lng } = {}, category = null) =>
   }
 };
 
-// Tính khoảng cách giữa hai điểm (theo Haversine formula)
-export const calculateDistance = (point1, point2) => {
-  const R = 6371; // Bán kính trái đất (km)
-  const dLat = deg2rad(point2.latitude - point1.latitude);
-  const dLon = deg2rad(point2.longitude - point1.longitude);
-  
-  const a = 
-    Math.sin(dLat/2) * Math.sin(dLat/2) +
-    Math.cos(deg2rad(point1.latitude)) * Math.cos(deg2rad(point2.latitude)) * 
-    Math.sin(dLon/2) * Math.sin(dLon/2);
-  
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-  return R * c;
-};
-
-const deg2rad = (deg) => {
-  return deg * (Math.PI/180);
-};
-
-// Lấy địa chỉ từ tọa độ (reverse geocoding)
 export const getAddressFromCoordinates = async (latitude, longitude) => {
   try {
     const baseUrl = 'https://nominatim.openstreetmap.org/reverse';
@@ -154,4 +141,14 @@ export const getAddressFromCoordinates = async (latitude, longitude) => {
     console.error('Error getting address:', error);
     return '';
   }
-}; 
+};
+
+const locationService = {
+  getCurrentLocation,
+  searchPlaces,
+  calculateDistance,
+  deg2rad,
+  getAddressFromCoordinates
+};
+
+export default locationService; 

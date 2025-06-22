@@ -68,4 +68,13 @@ export const formatDistance = (meters) => {
     return `${Math.round(meters)} m`;
   }
   return `${(meters / 1000).toFixed(1)} km`;
-}; 
+};
+
+// Để hỗ trợ các phiên bản cũ hơn
+const routeService = {
+  getRoute,
+  formatDuration,
+  formatDistance
+};
+
+export default routeService; 

@@ -1,4 +1,3 @@
-import { NavigationContainer } from '@react-navigation/native';
 import * as Location from 'expo-location';
 import { Slot } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
@@ -32,9 +31,7 @@ export default function RootLayout() {
     <SafeAreaProvider>
       <PaperProvider>
         <StatusBar style="dark" />
-        <NavigationContainer independent>
-          <Slot />
-        </NavigationContainer>
+        <Slot />
       </PaperProvider>
     </SafeAreaProvider>
   );

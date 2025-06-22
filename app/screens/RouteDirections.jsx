@@ -3,6 +3,8 @@ import { useLocalSearchParams, useNavigation } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
     FlatList,
+    SafeAreaView,
+    Share,
     StyleSheet,
     Text,
     TouchableOpacity,
@@ -32,7 +34,7 @@ const MANEUVER_ICONS = {
   'default': 'navigate'
 };
 
-export default function RouteDirections() {
+const RouteDirections = () => {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
   const params = useLocalSearchParams();
@@ -41,6 +43,7 @@ export default function RouteDirections() {
   const [endLocation, setEndLocation] = useState(null);
   const [place, setPlace] = useState(null);
   const [route, setRoute] = useState(null);
+  const [transportMode, setTransportMode] = useState('driving');
   
   // Lấy dữ liệu từ params
   useEffect(() => {
@@ -83,11 +86,12 @@ export default function RouteDirections() {
       
       if (params.route) {
         try {
-          setRoute(
-            typeof params.route === 'string'
-              ? JSON.parse(params.route)
-              : params.route
-          );
+          const routeData = JSON.parse(params.route);
+          setRoute(routeData);
+          
+          if (routeData.transportMode) {
+            setTransportMode(routeData.transportMode);
+          }
         } catch (error) {
           console.error('Error parsing route data:', error);
         }
@@ -149,6 +153,58 @@ export default function RouteDirections() {
     }
   };
   
+  // Chia sẻ thông tin lộ trình
+  const shareRoute = async () => {
+    if (!route) return;
+    
+    try {
+      const { startPoint, endPoint, formattedDistance, formattedDuration } = route;
+      
+      const message = 
+        `Chỉ đường từ:\n` +
+        `- Điểm đầu: ${startPoint.latitude}, ${startPoint.longitude}\n` +
+        `- Điểm cuối: ${endPoint.latitude}, ${endPoint.longitude}\n` +
+        `- Khoảng cách: ${formattedDistance}\n` +
+        `- Thời gian: ${formattedDuration}\n` +
+        `Được chia sẻ từ ứng dụng Go There`;
+      
+      await Share.share({
+        message,
+        title: 'Thông tin chỉ đường'
+      });
+    } catch (error) {
+      console.error('Error sharing route:', error);
+    }
+  };
+  
+  // Icon cho từng loại phương tiện
+  const getTransportIcon = (mode) => {
+    switch (mode) {
+      case 'driving':
+        return 'car';
+      case 'walking':
+        return 'walk';
+      case 'cycling':
+        return 'bicycle';
+      default:
+        return 'navigate';
+    }
+  };
+  
+  // Tên cho từng loại phương tiện
+  const getTransportName = (mode) => {
+    switch (mode) {
+      case 'driving':
+        return 'Lái xe';
+      case 'walking':
+        return 'Đi bộ';
+      case 'cycling':
+        return 'Đạp xe';
+      default:
+        return 'Điều hướng';
+    }
+  };
+  
   // Nếu không có dữ liệu
   if (!route || !startLocation || !endLocation) {
     return (
@@ -165,7 +221,7 @@ export default function RouteDirections() {
   }
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
+    <SafeAreaView style={[styles.container, { paddingTop: insets.top }]}>
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity
@@ -175,7 +231,12 @@ export default function RouteDirections() {
           <Ionicons name="arrow-back" size={24} color={theme.colors.text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Chỉ đường</Text>
-        <View style={{ width: 40 }} />
+        <TouchableOpacity
+          style={styles.shareButton}
+          onPress={shareRoute}
+        >
+          <Ionicons name="share-outline" size={24} color={theme.colors.text} />
+        </TouchableOpacity>
       </View>
 
       {/* Bản đồ */}
@@ -309,9 +370,9 @@ export default function RouteDirections() {
       >
         <Text style={styles.startButtonText}>Bắt đầu điều hướng</Text>
       </TouchableOpacity>
-    </View>
+    </SafeAreaView>
   );
-}
+};
 
 const styles = StyleSheet.create({
   container: {
@@ -511,4 +572,12 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
   },
-}); 
+  shareButton: {
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center'
+  },
+});
+
+export default RouteDirections; 

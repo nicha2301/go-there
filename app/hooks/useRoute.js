@@ -69,4 +69,6 @@ export const useRoute = () => {
     changeTransportMode,
     reverseRoute
   };
-}; 
+};
+
+export default useRoute; 

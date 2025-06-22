@@ -2,13 +2,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useNavigation } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import {
-    ActivityIndicator,
-    Animated,
-    Dimensions,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View
+  ActivityIndicator,
+  Animated,
+  Dimensions,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
 } from 'react-native';
 import MapView, { Marker, Polyline, PROVIDER_DEFAULT } from 'react-native-maps';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -20,17 +20,33 @@ const { width, height } = Dimensions.get('window');
 const CARD_HEIGHT = 220;
 const BOTTOM_SHEET_HEIGHT = 120;
 
-export default function MapScreen() {
+interface Place {
+  id: string;
+  name: string;
+  address: string;
+  latitude: number;
+  longitude: number;
+  category?: string;
+  distance?: string;
+  rating?: number;
+}
+
+interface Coordinates {
+  latitude: number;
+  longitude: number;
+}
+
+const MapScreen = () => {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
   const params = useLocalSearchParams();
   
   const [mapReady, setMapReady] = useState(false);
-  const [selectedPlace, setSelectedPlace] = useState(null);
-  const [markerCoords, setMarkerCoords] = useState(null);
-  const [transportMode, setTransportMode] = useState('driving');
+  const [selectedPlace, setSelectedPlace] = useState<Place | null>(null);
+  const [markerCoords, setMarkerCoords] = useState<Coordinates | null>(null);
+  const [transportMode, setTransportMode] = useState<string>('driving');
   
-  const mapRef = useRef(null);
+  const mapRef = useRef<MapView | null>(null);
   const slideAnim = useRef(new Animated.Value(BOTTOM_SHEET_HEIGHT)).current;
   
   const { location, loading: locationLoading, error: locationError, startWatchingLocation } = useLocation();
@@ -69,8 +85,8 @@ export default function MapScreen() {
       if (params?.place) {
         try {
           const place = typeof params.place === 'string' 
-            ? JSON.parse(params.place)
-            : params.place;
+            ? JSON.parse(params.place as string) as Place
+            : params.place as Place;
             
           setSelectedPlace(place);
           setMarkerCoords({
@@ -102,8 +118,7 @@ export default function MapScreen() {
     handleParams();
   }, [params, location]);
   
-  // Tìm đường với phương tiện khác
-  const changeTransportMode = async (mode) => {
+  const changeTransportMode = async (mode: string) => {
     setTransportMode(mode);
     
     if (location && selectedPlace) {
@@ -115,8 +130,7 @@ export default function MapScreen() {
     }
   };
   
-  // Zoom bản đồ để hiển thị hai vị trí
-  const zoomToTwoLocations = (loc1, loc2) => {
+  const zoomToTwoLocations = (loc1: Coordinates, loc2: Coordinates) => {
     if (!mapRef.current || !loc1 || !loc2) return;
     
     mapRef.current.fitToCoordinates(
@@ -313,7 +327,7 @@ export default function MapScreen() {
       </Animated.View>
     </View>
   );
-}
+};
 
 const styles = StyleSheet.create({
   container: {
@@ -449,4 +463,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     marginLeft: 8,
   },
-}); 
+});
+
+export default MapScreen; 
