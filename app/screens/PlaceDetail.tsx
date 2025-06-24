@@ -2,15 +2,14 @@ import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
-  Linking,
-  Platform,
-  ScrollView,
-  Share,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View
+    ActivityIndicator,
+    Linking,
+    Platform,
+    ScrollView,
+    Share,
+    Text,
+    TouchableOpacity,
+    View
 } from 'react-native';
 import MapView, { Marker, PROVIDER_DEFAULT } from 'react-native-maps';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -19,18 +18,35 @@ import useLocation from '../hooks/useLocation';
 import useRoute from '../hooks/useRoute';
 import { isInFavorites, removeFromFavorites, saveToFavorites } from '../services/storageService';
 
+interface Place {
+  id: string | number;
+  name: string;
+  address: string;
+  latitude: number;
+  longitude: number;
+  category?: string;
+  distance?: string;
+  rating?: number;
+}
+
+interface LocationType {
+  latitude: number;
+  longitude: number;
+  timestamp?: number;
+}
+
 const PlaceDetail = () => {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const params = useLocalSearchParams();
   
-  const [place, setPlace] = useState(null);
+  const [place, setPlace] = useState<Place | null>(null);
   const [isFavorite, setIsFavorite] = useState(false);
   const [loading, setLoading] = useState(true);
   const hasLoadedData = useRef(false);
   
-  const { location } = useLocation();
-  const { findRoute } = useRoute();
+  const { location } = useLocation() as { location: LocationType | null };
+  const { findRoute } = useRoute() as { findRoute: any };
   
   // Lấy dữ liệu địa điểm từ params
   useEffect(() => {
@@ -41,8 +57,8 @@ const PlaceDetail = () => {
       if (params.place) {
         try {
           const placeData = typeof params.place === 'string'
-            ? JSON.parse(params.place)
-            : params.place;
+            ? JSON.parse(params.place as string) as Place
+            : params.place as unknown as Place;
           
           setPlace(placeData);
           
@@ -89,7 +105,7 @@ const PlaceDetail = () => {
         
         // Chuyển đến màn hình bản đồ với thông tin chỉ đường
         router.push({
-          pathname: "/map",
+          pathname: "/map" as any,
           params: { 
             place: JSON.stringify(place),
             from: 'detail'
@@ -135,49 +151,49 @@ const PlaceDetail = () => {
 
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
+      <View className="flex-1 justify-center items-center">
         <ActivityIndicator size="large" color={theme.colors.primary} />
-        <Text style={styles.loadingText}>Đang tải...</Text>
+        <Text className="mt-4 text-base text-text">Đang tải...</Text>
       </View>
     );
   }
 
   if (!place) {
     return (
-      <View style={styles.errorContainer}>
+      <View className="flex-1 justify-center items-center p-6 bg-background">
         <Ionicons name="alert-circle" size={48} color={theme.colors.error} />
-        <Text style={styles.errorText}>Không tìm thấy thông tin địa điểm</Text>
+        <Text className="text-base text-text text-center mt-4 mb-6">Không tìm thấy thông tin địa điểm</Text>
         <TouchableOpacity
-          style={styles.backButton}
+          className="w-10 h-10 rounded-full bg-card justify-center items-center shadow-sm"
           onPress={() => router.back()}
         >
-          <Text style={styles.backButtonText}>Quay lại</Text>
+          <Text className="text-primary text-base font-medium">Quay lại</Text>
         </TouchableOpacity>
       </View>
     );
   }
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
+    <View className="flex-1 bg-background" style={{ paddingTop: insets.top }}>
       {/* Header */}
-      <View style={styles.header}>
+      <View className="flex-row justify-between items-center px-4 py-3">
         <TouchableOpacity 
-          style={styles.backButton}
+          className="w-10 h-10 rounded-full bg-card justify-center items-center shadow-sm"
           onPress={() => router.back()}
         >
           <Ionicons name="arrow-back" size={24} color={theme.colors.text} />
         </TouchableOpacity>
         
-        <View style={styles.headerActions}>
+        <View className="flex-row">
           <TouchableOpacity 
-            style={styles.actionButton}
+            className="w-10 h-10 rounded-full bg-card justify-center items-center ml-3 shadow-sm"
             onPress={handleShare}
           >
             <Ionicons name="share-outline" size={24} color={theme.colors.text} />
           </TouchableOpacity>
           
           <TouchableOpacity 
-            style={styles.actionButton}
+            className="w-10 h-10 rounded-full bg-card justify-center items-center ml-3 shadow-sm"
             onPress={handleToggleFavorite}
           >
             <Ionicons 
@@ -191,12 +207,12 @@ const PlaceDetail = () => {
 
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
+        className="pb-[100px]"
       >
         {/* Bản đồ nhỏ */}
-        <View style={styles.mapContainer}>
+        <View className="h-[200px] mx-4 my-4 rounded-md overflow-hidden shadow-md">
           <MapView
-            style={styles.map}
+            className="w-full h-full"
             provider={PROVIDER_DEFAULT}
             initialRegion={{
               latitude: place.latitude,
@@ -213,25 +229,25 @@ const PlaceDetail = () => {
               latitude: place.latitude,
               longitude: place.longitude,
             }}>
-              <View style={styles.markerContainer}>
+              <View className="items-center justify-center">
                 <Ionicons name="location" size={32} color={theme.colors.primary} />
               </View>
             </Marker>
           </MapView>
           
           <TouchableOpacity 
-            style={styles.openMapButton}
+            className="absolute right-2.5 bottom-2.5 bg-white/90 px-3 py-1.5 rounded-md shadow-sm"
             onPress={openInMapsApp}
           >
-            <Text style={styles.openMapButtonText}>Mở trong ứng dụng bản đồ</Text>
+            <Text className="text-xs text-primary font-medium">Mở trong ứng dụng bản đồ</Text>
           </TouchableOpacity>
         </View>
 
         {/* Thông tin địa điểm */}
-        <View style={styles.placeInfoContainer}>
+        <View className="px-4">
           {/* Tên địa điểm và danh mục */}
-          <View style={styles.placeHeader}>
-            <View style={styles.categoryBadge}>
+          <View className="mb-5">
+            <View className="flex-row items-center bg-primary px-3 py-1.5 rounded-md self-start mb-2.5">
               <Ionicons 
                 name={
                   place.category === 'restaurant' ? 'restaurant-outline' :
@@ -244,7 +260,7 @@ const PlaceDetail = () => {
                 size={16} 
                 color="white" 
               />
-              <Text style={styles.categoryText}>
+              <Text className="text-white text-sm font-medium ml-1.5">
                 {place.category === 'restaurant' ? 'Nhà hàng' :
                 place.category === 'cafe' ? 'Quán cafe' :
                 place.category === 'atm' ? 'ATM' :
@@ -254,10 +270,10 @@ const PlaceDetail = () => {
               </Text>
             </View>
             
-            <Text style={styles.placeName}>{place.name}</Text>
+            <Text className="text-2xl font-bold text-text mb-1.5">{place.name}</Text>
             
             {place.distance && (
-              <Text style={styles.placeDistance}>
+              <Text className="text-sm text-primary">
                 <Ionicons name="navigate" size={14} color={theme.colors.primary} />
                 {' '}Cách {place.distance}
               </Text>
@@ -265,15 +281,15 @@ const PlaceDetail = () => {
           </View>
           
           {/* Địa chỉ */}
-          <View style={styles.infoSection}>
-            <Text style={styles.sectionTitle}>Địa chỉ</Text>
-            <Text style={styles.addressText}>{place.address}</Text>
+          <View className="mt-5 p-4 bg-card rounded-md shadow-sm">
+            <Text className="text-base font-bold text-text mb-2">Địa chỉ</Text>
+            <Text className="text-[15px] text-text leading-[22px]">{place.address}</Text>
           </View>
           
           {/* Tọa độ */}
-          <View style={styles.infoSection}>
-            <Text style={styles.sectionTitle}>Tọa độ</Text>
-            <Text style={styles.coordsText}>
+          <View className="mt-5 p-4 bg-card rounded-md shadow-sm">
+            <Text className="text-base font-bold text-text mb-2">Tọa độ</Text>
+            <Text className="text-[15px] text-text font-mono">
               {place.latitude.toFixed(6)}, {place.longitude.toFixed(6)}
             </Text>
           </View>
@@ -281,195 +297,17 @@ const PlaceDetail = () => {
       </ScrollView>
 
       {/* Nút chỉ đường */}
-      <View style={[styles.footer, { paddingBottom: insets.bottom + 16 }]}>
+      <View className="absolute bottom-0 left-0 right-0 bg-white px-4 pt-3 shadow-lg" style={{ paddingBottom: insets.bottom + 16 }}>
         <TouchableOpacity 
-          style={styles.navigateButton}
+          className="flex-row justify-center items-center bg-primary rounded-md py-4 shadow-sm"
           onPress={handleNavigate}
         >
           <Ionicons name="navigate" size={20} color="white" />
-          <Text style={styles.navigateButtonText}>Chỉ đường đến đây</Text>
+          <Text className="text-white font-bold text-base ml-2">Chỉ đường đến đây</Text>
         </TouchableOpacity>
       </View>
     </View>
   );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: theme.colors.background,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loadingText: {
-    marginTop: 16,
-    fontSize: 16,
-    color: theme.colors.text,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-  backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: theme.radius.circle,
-    backgroundColor: theme.colors.card,
-    justifyContent: 'center',
-    alignItems: 'center',
-    ...theme.shadow.small,
-  },
-  headerActions: {
-    flexDirection: 'row',
-  },
-  actionButton: {
-    width: 40,
-    height: 40,
-    borderRadius: theme.radius.circle,
-    backgroundColor: theme.colors.card,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginLeft: 12,
-    ...theme.shadow.small,
-  },
-  scrollContent: {
-    paddingBottom: 100,
-  },
-  mapContainer: {
-    height: 200,
-    margin: 16,
-    borderRadius: theme.radius.medium,
-    overflow: 'hidden',
-    ...theme.shadow.medium,
-  },
-  map: {
-    width: '100%',
-    height: '100%',
-  },
-  markerContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  openMapButton: {
-    position: 'absolute',
-    right: 10,
-    bottom: 10,
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: theme.radius.medium,
-    ...theme.shadow.small,
-  },
-  openMapButtonText: {
-    fontSize: 12,
-    color: theme.colors.primary,
-    fontWeight: '500',
-  },
-  placeInfoContainer: {
-    paddingHorizontal: 16,
-  },
-  placeHeader: {
-    marginBottom: 20,
-  },
-  categoryBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: theme.colors.primary,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: theme.radius.medium,
-    alignSelf: 'flex-start',
-    marginBottom: 10,
-  },
-  categoryText: {
-    color: 'white',
-    fontSize: 14,
-    fontWeight: '500',
-    marginLeft: 6,
-  },
-  placeName: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: theme.colors.text,
-    marginBottom: 6,
-  },
-  placeDistance: {
-    fontSize: 14,
-    color: theme.colors.primary,
-  },
-  infoSection: {
-    marginTop: 20,
-    padding: 16,
-    backgroundColor: theme.colors.card,
-    borderRadius: theme.radius.medium,
-    ...theme.shadow.tiny,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: theme.colors.text,
-    marginBottom: 8,
-  },
-  addressText: {
-    fontSize: 15,
-    color: theme.colors.text,
-    lineHeight: 22,
-  },
-  coordsText: {
-    fontSize: 15,
-    color: theme.colors.text,
-    fontFamily: 'monospace',
-  },
-  footer: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: 'white',
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    ...theme.shadow.large,
-  },
-  navigateButton: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: theme.colors.primary,
-    borderRadius: theme.radius.medium,
-    paddingVertical: 16,
-    ...theme.shadow.small,
-  },
-  navigateButtonText: {
-    color: 'white',
-    fontWeight: 'bold',
-    fontSize: 16,
-    marginLeft: 8,
-  },
-  errorContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 24,
-    backgroundColor: theme.colors.background
-  },
-  errorText: {
-    fontSize: 16,
-    color: theme.colors.text,
-    textAlign: 'center',
-    marginTop: 16,
-    marginBottom: 24
-  },
-  backButtonText: {
-    color: theme.colors.primary,
-    fontSize: 16,
-    fontWeight: '500'
-  }
-});
 
 export default PlaceDetail; 

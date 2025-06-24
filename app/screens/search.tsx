@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useNavigation, useRouter } from 'expo-router';
 import { styled } from 'nativewind';
 import React, { useEffect, useState } from 'react';
 import {
@@ -36,6 +36,7 @@ const CATEGORIES = [
 export default function SearchScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const navigation = useNavigation();
   const { search, searchNearby, searchResults, history, loading, loadHistory, selectPlace } = usePlaces();
   const { location, fetchCurrentLocation } = useLocation();
   const { checkIsFavorite, toggleFavorite } = useFavorites();
@@ -118,7 +119,7 @@ export default function SearchScreen() {
     
     // Chuyển đến màn hình bản đồ với địa điểm đã chọn
     router.push({
-      pathname: "/map",
+      pathname: "/" as any,
       params: { 
         place: JSON.stringify(place),
         from: 'search'
@@ -183,7 +184,7 @@ export default function SearchScreen() {
   );
 
   return (
-    <StyledView className={`flex-1 bg-background pt-[${insets.top}px]`}>
+    <StyledView className="flex-1 bg-background" style={{ paddingTop: insets.top }}>
       {/* Thanh tìm kiếm */}
       <StyledView className="flex-row items-center px-4 py-2">
         <StyledView className="flex-row items-center flex-1 px-3 py-2 bg-card rounded-medium border border-lightGrey">
