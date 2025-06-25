@@ -1,11 +1,6 @@
-import { Redirect, Stack } from 'expo-router';
 import React from 'react';
+import MapScreen from './screens/map';
 
 export default function Page() {
-  return (
-    <>
-      <Stack.Screen options={{ headerShown: false }} />
-      <Redirect href="/" />
-    </>
-  );
+  return <MapScreen />;
 } 
