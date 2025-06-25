@@ -92,63 +92,60 @@ const useRoute = () => {
         clearTimeout(timeoutIdRef.current);
       }
       
-      // Trả về Promise đợi kết quả
-      return new Promise((resolve) => {
-        // Biến để theo dõi trạng thái đã resolve chưa
-        let isResolved = false;
-        
-        // Hàm để resolve kết quả và đảm bảo chỉ resolve một lần
-        const safeResolve = (result) => {
-          if (!isResolved) {
-            isResolved = true;
-            console.log('[useRoute] Resolving promise with result:', result ? 'found' : 'not found');
-            resolve(result);
-          }
-        };
-        
-        // Kiểm tra kết quả sau một khoảng thời gian
-        const checkInterval = setInterval(() => {
-          // Nếu request hiện tại khớp với request chúng ta đang đợi
-          if (pendingRequestRef.current === requestKey) {
-            if (routeResultRef.current) {
-              console.log('[useRoute] Route found in interval check, resolving promise');
-              clearInterval(checkInterval);
-              safeResolve(routeResultRef.current);
-              // Reset routeResultRef sau khi đã resolve
-              routeResultRef.current = null;
-            }
-          } else {
-            // Nếu có request mới, hủy interval và resolve null
-            console.log('[useRoute] Request superseded, clearing interval');
-            clearInterval(checkInterval);
-            safeResolve(null);
-          }
-        }, 500);
-        
-        // Timeout sau 15 giây
+      // Thiết lập timeout ngắn hơn để tránh đợi quá lâu
+      const timeoutPromise = new Promise((_, reject) => {
         timeoutIdRef.current = setTimeout(() => {
-          console.log('[useRoute] Request timeout after 15s');
-          clearInterval(checkInterval);
-          
-          // Kiểm tra một lần cuối cùng xem đã có route chưa
-          if (route && pendingRequestRef.current === requestKey) {
-            console.log('[useRoute] Route available despite timeout, returning');
-            safeResolve(route);
-          } else if (routeResultRef.current && pendingRequestRef.current === requestKey) {
-            console.log('[useRoute] RouteResult available despite timeout, returning');
-            safeResolve(routeResultRef.current);
-          } else {
-            console.log('[useRoute] No route available after timeout');
-            safeResolve(null);
-          }
-        }, 15000);
+          console.log('[useRoute] Request timeout after 8s');
+          reject(new Error('Thời gian tìm đường quá lâu'));
+        }, 8000);
       });
+      
+      // Trả về Promise đợi kết quả hoặc timeout
+      try {
+        const result = await Promise.race([
+          // Promise đợi kết quả
+          new Promise((resolve) => {
+            // Thiết lập interval để kiểm tra kết quả
+            const checkInterval = setInterval(() => {
+              // Nếu đã có kết quả và request key khớp
+              if (routeResultRef.current && pendingRequestRef.current === requestKey) {
+                console.log('[useRoute] Route found, resolving promise');
+                clearInterval(checkInterval);
+                
+                // Xóa timeout
+                if (timeoutIdRef.current) {
+                  clearTimeout(timeoutIdRef.current);
+                  timeoutIdRef.current = null;
+                }
+                
+                resolve(routeResultRef.current);
+                
+                // Reset result ref sau khi đã resolve
+                routeResultRef.current = null;
+              }
+            }, 200); // Kiểm tra mỗi 200ms
+            
+            // Sau 10s nếu vẫn chưa tìm thấy route, clear interval
+            setTimeout(() => {
+              clearInterval(checkInterval);
+            }, 10000);
+          }),
+          // Promise timeout
+          timeoutPromise
+        ]);
+        
+        return result;
+      } catch (error) {
+        console.error('[useRoute] Error in promise race:', error);
+        setError(error.message);
+        return null;
+      }
     } catch (error) {
       console.error('[useRoute] Error in getRoute:', error);
       setError(error.message);
       return null;
     }
-  }, [addToQueue, isProcessingQueue, route]);
+  }, [addToQueue, isProcessingQueue]);
   
   /**
    * Xử lý hàng đợi yêu cầu tìm đường

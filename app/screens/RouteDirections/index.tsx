@@ -317,6 +317,89 @@ export default function RouteDirections() {
   // Lấy hàm tìm đường từ hook
   const { getRoute, loading: routeLoading, error: routeApiError, route: apiRoute } = useRoute() as RouteHook;
 
+  // Xử lý params từ màn hình trước
+  useEffect(() => {
+    console.log('[RouteDirections] Processing params:', params);
+    
+    if (params && !paramsProcessedRef.current) {
+      // Đánh dấu đã xử lý params để không lặp lại
+      paramsProcessedRef.current = true;
+      
+      try {
+        // Xử lý thông tin điểm bắt đầu
+        if (params.startLocation) {
+          const parsedStartLocation = typeof params.startLocation === 'string'
+            ? JSON.parse(params.startLocation)
+            : params.startLocation;
+          
+          console.log('[RouteDirections] Setting start location:', parsedStartLocation);
+          setStartLocation(parsedStartLocation);
+        }
+        
+        // Xử lý thông tin điểm kết thúc
+        if (params.endLocation) {
+          const parsedEndLocation = typeof params.endLocation === 'string'
+            ? JSON.parse(params.endLocation)
+            : params.endLocation;
+          
+          console.log('[RouteDirections] Setting end location:', parsedEndLocation);
+          setEndLocation(parsedEndLocation);
+        }
+        
+        // Xử lý tên địa điểm
+        if (params.startPlaceName) {
+          setStartPlaceName(params.startPlaceName.toString());
+        } else if (currentAddress) {
+          setStartPlaceName('Vị trí hiện tại');
+        }
+        
+        if (params.endPlaceName) {
+          setEndPlaceName(params.endPlaceName.toString());
+        }
+        
+        // Xử lý đối tượng place
+        if (params.place) {
+          try {
+            const parsedPlace = typeof params.place === 'string'
+              ? JSON.parse(params.place)
+              : params.place;
+            
+            setPlace(parsedPlace);
+            
+            // Cập nhật endLocation từ place nếu chưa có
+            if (!params.endLocation && parsedPlace.latitude && parsedPlace.longitude) {
+              setEndLocation({
+                latitude: parsedPlace.latitude,
+                longitude: parsedPlace.longitude
+              });
+            }
+            
+            // Cập nhật endPlaceName từ place nếu chưa có
+            if (!params.endPlaceName && parsedPlace.name) {
+              setEndPlaceName(parsedPlace.name);
+            }
+          } catch (error) {
+            console.error('[RouteDirections] Error parsing place:', error);
+          }
+        }
+        
+        // Thiết lập vị trí hiện tại làm điểm xuất phát nếu không có startLocation
+        if (!params.startLocation && currentLocation) {
+          console.log('[RouteDirections] Using current location as start:', currentLocation);
+          setStartLocation(currentLocation);
+          setStartPlaceName('Vị trí hiện tại');
+        }
+        
+        // Thiết lập phương tiện di chuyển nếu có
+        if (params.transportMode) {
+          setTransportMode(params.transportMode.toString());
+        }
+      } catch (error) {
+        console.error('[RouteDirections] Error processing params:', error);
+      }
+    }
+  }, [params, currentLocation, currentAddress]);
+
   // Animate bottom sheet
   const toggleBottomSheet = () => {
     const toValue = isBottomSheetExpanded ? BOTTOM_SHEET_MIN_HEIGHT : BOTTOM_SHEET_MAX_HEIGHT;
@@ -346,15 +429,19 @@ export default function RouteDirections() {
 
   // Sử dụng any để tránh lỗi TypeScript khi không có kiểu cụ thể cho event
   const handleGestureStateChange = ({ nativeEvent }: any) => {
-    // Nếu có thuộc tính translationY
-    if (nativeEvent && typeof nativeEvent.translationY === 'number') {
-      // Kéo lên (translationY < 0), mở rộng bottom sheet
-      if (nativeEvent.translationY < -50 && !isBottomSheetExpanded) {
-        toggleBottomSheet();
-      } 
-      // Kéo xuống (translationY > 0), thu nhỏ bottom sheet
-      else if (nativeEvent.translationY > 50 && isBottomSheetExpanded) {
-        toggleBottomSheet();
+    // Chỉ xử lý gesture khi người dùng kéo từ phần header của bottom sheet
+    // hoặc khi đang ở trạng thái thu gọn
+    if (!isBottomSheetExpanded || (nativeEvent && nativeEvent.y < 200)) {
+      // Nếu có thuộc tính translationY
+      if (nativeEvent && typeof nativeEvent.translationY === 'number') {
+        // Kéo lên (translationY < 0), mở rộng bottom sheet
+        if (nativeEvent.translationY < -50 && !isBottomSheetExpanded) {
+          toggleBottomSheet();
+        } 
+        // Kéo xuống (translationY > 0), thu nhỏ bottom sheet
+        else if (nativeEvent.translationY > 50 && isBottomSheetExpanded) {
+          toggleBottomSheet();
+        }
       }
     }
 
@@ -427,7 +514,9 @@ export default function RouteDirections() {
           }, 500);
         } else {
           console.log('[RouteDirections] No route data returned');
-          throw new Error('Không thể tìm thấy đường đi');
+          // Thay vì ném một lỗi mới, chỉ cần set lỗi và reset flag để có thể thử lại sau
+          setRouteError('Không thể tìm thấy đường đi');
+          routeRequestedRef.current = false;
         }
       } catch (error) {
         console.error('[RouteDirections] Error finding route:', error);
@@ -736,7 +825,9 @@ export default function RouteDirections() {
         {/* Bottom Sheet có PanGestureHandler để kéo thả */}
         <PanGestureHandler
           onGestureEvent={handleGesture}
-          onEnded={handleGestureStateChange}
+          onHandlerStateChange={handleGestureStateChange}
+          activeOffsetY={[-20, 20]}
+          failOffsetY={[-100, 100]}
         >
           <Animated.View 
             className="absolute left-0 right-0 bottom-0 bg-white rounded-t-3xl shadow-lg"
@@ -792,6 +883,11 @@ export default function RouteDirections() {
                       )}
                       keyExtractor={(item, index) => `step-${index}`}
                       showsVerticalScrollIndicator={true}
+                      nestedScrollEnabled={true}
+                      onTouchStart={(e) => {
+                        // Ngăn sự kiện chạm lan tỏa lên PanGestureHandler khi người dùng scroll trong FlatList
+                        e.stopPropagation();
+                      }}
                     />
                   ) : (
                     <View className="flex-1 justify-center items-center">
