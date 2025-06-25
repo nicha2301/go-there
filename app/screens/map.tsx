@@ -6,20 +6,31 @@ import {
   Alert,
   Animated,
   Dimensions,
+  FlatList,
+  Keyboard,
+  Modal,
   Text,
+  TextInput,
   TouchableOpacity,
   View
 } from 'react-native';
 import MapView, { Marker, Polyline, PROVIDER_DEFAULT } from 'react-native-maps';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import theme from '../constants/theme';
-import useFavorites from '../hooks/useFavorites';
 import useLocation from '../hooks/useLocation';
 import useRoute from '../hooks/useRoute';
+import { getAddressFromCoordinates, searchPlaces } from '../services/locationService';
 
 const { width, height } = Dimensions.get('window');
 const CARD_HEIGHT = 220;
 const BOTTOM_SHEET_HEIGHT = 120;
+
+// Icons cho các phương tiện
+const TRANSPORT_MODES = [
+  { id: 'driving', icon: 'car', name: 'Ô tô' },
+  { id: 'walking', icon: 'walking', name: 'Đi bộ' },
+  { id: 'cycling', icon: 'bicycle', name: 'Xe đạp' }
+];
 
 interface Place {
   id: string;
@@ -41,6 +52,7 @@ interface LocationType {
   latitude: number;
   longitude: number;
   timestamp?: number;
+  address?: string;
 }
 
 interface RouteType {
@@ -56,6 +68,190 @@ interface RouteType {
   transportMode: string;
 }
 
+// Component thanh tìm kiếm
+interface SearchBarProps {
+  value: string;
+  onPress: () => void;
+  placeholder: string;
+  isFrom?: boolean;
+}
+
+const SearchBar = ({ value, onPress, placeholder, isFrom = false }: SearchBarProps) => (
+  <TouchableOpacity 
+    className="flex-row items-center bg-white rounded-md p-3 shadow-sm"
+    onPress={onPress}
+  >
+    <View className="w-8 h-8 rounded-full bg-backgroundHighlight justify-center items-center mr-2">
+      <Ionicons 
+        name={isFrom ? "locate" : "location"} 
+        size={18} 
+        color={isFrom ? theme.colors.success : theme.colors.primary} 
+      />
+    </View>
+    
+    <View className="flex-1 flex-row items-center">
+      {value ? (
+        <Text className="flex-1 text-text" numberOfLines={1}>
+          {value}
+        </Text>
+      ) : (
+        <Text className="flex-1 text-textSecondary">{placeholder}</Text>
+      )}
+      <Ionicons name="search" size={18} color={theme.colors.grey} />
+    </View>
+  </TouchableOpacity>
+);
+
+// Component modal tìm kiếm
+interface SearchModalProps {
+  visible: boolean;
+  onClose: () => void;
+  onSelectPlace: (place: Place) => void;
+  isOriginSearch?: boolean;
+  title?: string;
+}
+
+const SearchModal = ({ 
+  visible, 
+  onClose, 
+  onSelectPlace, 
+  isOriginSearch = false,
+  title = "Tìm kiếm địa điểm"
+}: SearchModalProps) => {
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<Place[]>([]);
+  const [loading, setLoading] = useState(false);
+  const { location } = useLocation() as { location: LocationType | null };
+  
+  // Xử lý tìm kiếm
+  const handleSearch = async () => {
+    if (!searchQuery.trim()) return;
+    
+    Keyboard.dismiss();
+    setLoading(true);
+    
+    try {
+      const results = await searchPlaces(
+        searchQuery, 
+        location ? { lat: location.latitude, lng: location.longitude } : undefined
+      );
+      setSearchResults(results);
+    } catch (error) {
+      console.error('Error searching places:', error);
+      Alert.alert('Lỗi', 'Không thể tìm kiếm địa điểm. Vui lòng thử lại sau.');
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  // Xử lý khi chọn một địa điểm
+  const handleSelectPlace = (place: Place) => {
+    onSelectPlace(place);
+    onClose();
+  };
+  
+  return (
+    <Modal
+      visible={visible}
+      animationType="slide"
+      transparent={false}
+      onRequestClose={onClose}
+    >
+      <View className="flex-1 bg-background pt-12">
+        {/* Header */}
+        <View className="flex-row items-center px-4 py-2 bg-card">
+          <TouchableOpacity 
+            onPress={onClose}
+            className="mr-3"
+          >
+            <Ionicons name="arrow-back" size={24} color={theme.colors.primary} />
+          </TouchableOpacity>
+          <Text className="text-lg font-bold text-text">
+            {title}
+          </Text>
+        </View>
+        
+        {/* Thanh tìm kiếm */}
+        <View className="flex-row items-center px-4 py-2">
+          <View className="flex-row items-center flex-1 px-3 py-2 bg-card rounded-md border border-lightGrey">
+            <Ionicons name="search" size={20} color={theme.colors.grey} />
+            <TextInput
+              className="flex-1 ml-2 text-base text-text"
+              placeholder="Nhập tên địa điểm..."
+              placeholderTextColor={theme.colors.textSecondary}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              onSubmitEditing={handleSearch}
+              returnKeyType="search"
+              autoFocus={true}
+            />
+            {searchQuery.length > 0 && (
+              <TouchableOpacity
+                onPress={() => setSearchQuery('')}
+              >
+                <Ionicons name="close-circle" size={20} color={theme.colors.grey} />
+              </TouchableOpacity>
+            )}
+          </View>
+          
+          <TouchableOpacity 
+            className="ml-2 px-4 py-2 bg-primary rounded-md"
+            onPress={handleSearch}
+          >
+            <Text className="text-white font-bold">Tìm</Text>
+          </TouchableOpacity>
+        </View>
+        
+        {/* Kết quả tìm kiếm */}
+        {loading ? (
+          <View className="flex-1 justify-center items-center">
+            <ActivityIndicator size="large" color={theme.colors.primary} />
+          </View>
+        ) : (
+          <FlatList
+            data={searchResults}
+            keyExtractor={(item) => item.id.toString()}
+            renderItem={({ item }) => (
+              <TouchableOpacity 
+                className="flex-row p-4 border-b border-border"
+                onPress={() => handleSelectPlace(item)}
+              >
+                <View className="w-10 h-10 rounded-full bg-backgroundHighlight justify-center items-center mr-3">
+                  <Ionicons 
+                    name={item.category === 'restaurant' ? 'restaurant' : 'location'} 
+                    size={20} 
+                    color={theme.colors.primary} 
+                  />
+                </View>
+                <View className="flex-1">
+                  <Text className="text-base font-semibold text-text">{item.name}</Text>
+                  <Text className="text-sm text-textSecondary" numberOfLines={2}>{item.address}</Text>
+                  {item.distance && (
+                    <Text className="text-xs text-textSecondary mt-1">{item.distance}</Text>
+                  )}
+                </View>
+              </TouchableOpacity>
+            )}
+            ListEmptyComponent={
+              searchQuery.length > 0 ? (
+                <View className="flex-1 justify-center items-center py-10">
+                  <Ionicons name="search" size={64} color={theme.colors.border} />
+                  <Text className="text-lg font-bold text-text mt-4">
+                    Không tìm thấy kết quả
+                  </Text>
+                  <Text className="text-center text-textSecondary mt-2 px-8">
+                    Thử tìm kiếm với từ khóa khác
+                  </Text>
+                </View>
+              ) : null
+            }
+          />
+        )}
+      </View>
+    </Modal>
+  );
+};
+
 const MapScreen = () => {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
@@ -70,8 +266,18 @@ const MapScreen = () => {
   const [routeError, setRouteError] = useState<string | null>(null);
   const [isBottomSheetExpanded, setIsBottomSheetExpanded] = useState(false);
   const [isLoadingReverseGeocode, setIsLoadingReverseGeocode] = useState(false);
-  const [shouldFindRoute, setShouldFindRoute] = useState(false);
-  const [pendingRouteRequest, setPendingRouteRequest] = useState<{
+  const [isLoading, setIsLoading] = useState(false);
+  const [startPlaceName, setStartPlaceName] = useState<string>('');
+  const [endPlaceName, setEndPlaceName] = useState<string>('');
+  const [showDirectionsUI, setShowDirectionsUI] = useState(false);
+  
+  // Thêm state cho modal tìm kiếm
+  const [showSearchModal, setShowSearchModal] = useState(false);
+  const [isOriginSearch, setIsOriginSearch] = useState(false);
+  const [searchModalTitle, setSearchModalTitle] = useState('Tìm kiếm địa điểm');
+  
+  // Xóa state shouldFindRoute và pendingRouteRequest để tránh vòng lặp vô hạn
+  const pendingRouteRequestRef = useRef<{
     start: Coordinates;
     end: Coordinates;
     mode: string;
@@ -83,24 +289,26 @@ const MapScreen = () => {
   const initialLocationRef = useRef<LocationType | null>(null);
   const initialParamsProcessed = useRef(false);
   
-  const { location, loading: locationLoading, error: locationError, startWatchingLocation, reverseGeocode } = useLocation() as {
+  const { location, address, loading: locationLoading, error: locationError, isTracking, startLocationTracking, getCurrentLocation, stopLocationTracking } = useLocation() as {
     location: LocationType | null;
+    address: string;
     loading: boolean;
     error: string | null;
-    startWatchingLocation: () => void;
-    reverseGeocode: (coords: Coordinates) => Promise<Place | null>;
+    isTracking: boolean;
+    startLocationTracking: () => void;
+    getCurrentLocation: () => void;
+    stopLocationTracking: () => void;
   };
   
-  const { route, loading: routeLoading, error, findRoute } = useRoute() as {
+  const { route, loading: routeLoading, error: routeApiError, getRoute, clearRoute } = useRoute() as {
     route: RouteType | null;
     loading: boolean;
     error: string | null;
-    findRoute: (start: Coordinates, end: Coordinates, mode: string) => Promise<RouteType | null>;
+    getRoute: (start: Coordinates, end: Coordinates, mode: string) => Promise<RouteType | null>;
+    clearRoute: () => void;
   };
   
-  const { favorites } = useFavorites();
-  
-  // Hàm tiện ích để animate bottom sheet - phải khai báo trước khi sử dụng trong useEffect
+  // Hàm tiện ích để animate bottom sheet
   const animateBottomSheet = useCallback((toValue: number) => {
     Animated.timing(slideAnim, {
       toValue,
@@ -109,6 +317,31 @@ const MapScreen = () => {
     }).start();
   }, [slideAnim]);
   
+  // Hàm reverse geocode
+  const reverseGeocode = useCallback(async (coords: Coordinates) => {
+    try {
+      setIsLoadingReverseGeocode(true);
+      const addressText = await getAddressFromCoordinates(coords.latitude, coords.longitude);
+      
+      // Tạo đối tượng địa điểm từ tọa độ và địa chỉ
+      const place: Place = {
+        id: `place-${Date.now()}`,
+        name: addressText.split(',')[0] || 'Địa điểm đã chọn',
+        address: addressText,
+        latitude: coords.latitude,
+        longitude: coords.longitude,
+        category: 'other'
+      };
+      
+      return place;
+    } catch (error) {
+      console.error('Error in reverse geocoding:', error);
+      return null;
+    } finally {
+      setIsLoadingReverseGeocode(false);
+    }
+  }, []);
+  
   const initialRegion = useMemo(() => ({
     latitude: 10.762622,  // Vị trí mặc định TP.HCM
     longitude: 106.660172,
@@ -116,25 +349,32 @@ const MapScreen = () => {
     longitudeDelta: 0.0421,
   }), []);
 
-  // Lấy vị trí ban đầu
+  // Lấy vị trí ban đầu - sửa lỗi vòng lặp vô hạn
   useEffect(() => {
-    startWatchingLocation();
-  }, [startWatchingLocation]);
+    startLocationTracking();
+    
+    // Cleanup function
+    return () => {
+      stopLocationTracking();
+    };
+  }, []); // Chỉ chạy một lần khi component mount
 
-  // Lưu vị trí đầu tiên để tránh cập nhật liên tục
+  // Lưu vị trí đầu tiên
   useEffect(() => {
     if (location && !initialLocationRef.current) {
       initialLocationRef.current = location;
+      // Cập nhật tên vị trí hiện tại
+      setStartPlaceName('Vị trí hiện tại');
     }
   }, [location]);
 
-  // Xử lý lỗi
+  // Xử lý lỗi từ API tìm đường
   useEffect(() => {
-    if (error) {
-      setRouteError(error);
-      console.error('Route error:', error);
+    if (routeApiError) {
+      setRouteError(routeApiError);
+      console.error('Route error:', routeApiError);
     }
-  }, [error]);
+  }, [routeApiError]);
 
   // Mở rộng bottom sheet khi có lộ trình
   useEffect(() => {
@@ -142,7 +382,10 @@ const MapScreen = () => {
       setIsBottomSheetExpanded(true);
       animateBottomSheet(height - 300);
       // Xóa yêu cầu tìm đường đang chờ xử lý
-      setPendingRouteRequest(null);
+      pendingRouteRequestRef.current = null;
+      
+      // Hiển thị giao diện chỉ đường
+      setShowDirectionsUI(true);
     }
   }, [route, animateBottomSheet, height]);
 
@@ -177,44 +420,96 @@ const MapScreen = () => {
   // Xử lý params khi màn hình được mở - chỉ chạy một lần
   useEffect(() => {
     // Chỉ xử lý params một lần
-    if (initialParamsProcessed.current || !params?.place) return;
+    if (initialParamsProcessed.current) return;
     
     const handleParams = async () => {
       try {
-        const place = typeof params.place === 'string' 
-          ? JSON.parse(params.place as string) as Place
-          : params.place as unknown as Place;
-          
-        setSelectedPlace(place);
-        setMarkerCoords({
-          latitude: place.latitude,
-          longitude: place.longitude
-        });
-        
-        // Hiển thị nút quay lại khi có địa điểm được chọn
-        setShowBackButton(true);
-        
-        // Mở bottom sheet với kích thước cơ bản
-        setIsBottomSheetExpanded(false);
-        animateBottomSheet(BOTTOM_SHEET_HEIGHT);
-        
-        // Đánh dấu đã xử lý params
-        initialParamsProcessed.current = true;
-        
-        // Nếu có vị trí, zoom đến khu vực và đặt yêu cầu tìm đường
-        if (location) {
-          // Zoom đến khu vực bao gồm người dùng và địa điểm
-          zoomToTwoLocations(
-            { latitude: location.latitude, longitude: location.longitude },
-            { latitude: place.latitude, longitude: place.longitude }
-          );
-          
-          // Lưu yêu cầu tìm đường để xử lý sau
-          setPendingRouteRequest({
-            start: { latitude: location.latitude, longitude: location.longitude },
-            end: { latitude: place.latitude, longitude: place.longitude },
-            mode: transportMode
+        // Xử lý điểm đến (place)
+        if (params?.place) {
+          const place = typeof params.place === 'string' 
+            ? JSON.parse(params.place as string) as Place
+            : params.place as unknown as Place;
+            
+          setSelectedPlace(place);
+          setMarkerCoords({
+            latitude: place.latitude,
+            longitude: place.longitude
           });
+          setEndPlaceName(place.name);
+          
+          // Hiển thị nút quay lại khi có địa điểm được chọn
+          setShowBackButton(true);
+          
+          // Mở bottom sheet với kích thước cơ bản
+          setIsBottomSheetExpanded(false);
+          animateBottomSheet(BOTTOM_SHEET_HEIGHT);
+          
+          // Đánh dấu đã xử lý params
+          initialParamsProcessed.current = true;
+          
+          // Hiển thị giao diện chỉ đường
+          setShowDirectionsUI(true);
+          
+          // Nếu có vị trí, zoom đến khu vực và tìm đường
+          if (location) {
+            // Zoom đến khu vực bao gồm người dùng và địa điểm
+            zoomToTwoLocations(
+              { latitude: location.latitude, longitude: location.longitude },
+              { latitude: place.latitude, longitude: place.longitude }
+            );
+            
+            // Tìm đường trực tiếp thay vì lưu vào state để tránh vòng lặp vô hạn
+            try {
+              setIsLoading(true);
+              await getRoute(
+                { latitude: location.latitude, longitude: location.longitude },
+                { latitude: place.latitude, longitude: place.longitude },
+                transportMode
+              );
+            } catch (error) {
+              console.error('Error finding route:', error);
+              setRouteError(error instanceof Error ? error.message : 'Lỗi tìm đường');
+            } finally {
+              setIsLoading(false);
+            }
+          }
+        }
+        
+        // Xử lý điểm xuất phát (startPlace)
+        if (params?.startPlace) {
+          const startPlace = typeof params.startPlace === 'string'
+            ? JSON.parse(params.startPlace as string) as Place
+            : params.startPlace as unknown as Place;
+            
+          // Cập nhật tên và vị trí điểm xuất phát
+          setStartPlaceName(startPlace.name);
+          
+          // Nếu đã có điểm đến, tìm đường từ điểm xuất phát mới đến điểm đến
+          if (selectedPlace) {
+            setShowDirectionsUI(true);
+            
+            try {
+              setIsLoading(true);
+              await getRoute(
+                { latitude: startPlace.latitude, longitude: startPlace.longitude },
+                { latitude: selectedPlace.latitude, longitude: selectedPlace.longitude },
+                transportMode
+              );
+              
+              // Zoom đến khu vực bao gồm điểm xuất phát và điểm đến
+              zoomToTwoLocations(
+                { latitude: startPlace.latitude, longitude: startPlace.longitude },
+                { latitude: selectedPlace.latitude, longitude: selectedPlace.longitude }
+              );
+            } catch (error) {
+              console.error('Error finding route with new start location:', error);
+              setRouteError(error instanceof Error ? error.message : 'Lỗi tìm đường');
+            } finally {
+              setIsLoading(false);
+            }
+          }
+          
+          initialParamsProcessed.current = true;
         }
       } catch (error) {
         console.error('Error parsing place data:', error);
@@ -222,50 +517,30 @@ const MapScreen = () => {
     };
     
     handleParams();
-  }, [params, location, transportMode, zoomToTwoLocations, animateBottomSheet]);
+  }, [params, location, transportMode, zoomToTwoLocations, animateBottomSheet, getRoute, selectedPlace]);
   
-  // Xử lý tìm đường khi có yêu cầu
-  useEffect(() => {
-    const processRouteRequest = async () => {
-      // Nếu đang tìm đường hoặc không có yêu cầu, không làm gì cả
-      if (routeLoading || !pendingRouteRequest) return;
-      
-      try {
-        console.log('Finding route from', pendingRouteRequest.start, 'to', pendingRouteRequest.end);
-        await findRoute(
-          pendingRouteRequest.start,
-          pendingRouteRequest.end,
-          pendingRouteRequest.mode
-        );
-      } catch (error) {
-        console.error('Error finding route:', error);
-        setRouteError(error instanceof Error ? error.message : 'Lỗi tìm đường');
-        
-        // Ngay cả khi có lỗi, vẫn hiển thị thông tin địa điểm
-        setIsBottomSheetExpanded(true);
-        animateBottomSheet(height / 2);
-        
-        // Xóa yêu cầu tìm đường để không thử lại
-        setPendingRouteRequest(null);
-      }
-    };
-    
-    processRouteRequest();
-  }, [pendingRouteRequest, routeLoading, findRoute, animateBottomSheet, height]);
-  
+  // Xử lý khi chọn phương tiện
   const changeTransportMode = useCallback(async (mode: string) => {
     if (mode === transportMode || !location || !selectedPlace) return;
     
     setTransportMode(mode);
     setRouteError(null);
     
-    // Thay vì gọi findRoute trực tiếp, đặt một yêu cầu tìm đường mới
-    setPendingRouteRequest({
-      start: { latitude: location.latitude, longitude: location.longitude },
-      end: { latitude: selectedPlace.latitude, longitude: selectedPlace.longitude },
-      mode
-    });
-  }, [transportMode, location, selectedPlace]);
+    // Gọi tìm đường trực tiếp thay vì sử dụng state để tránh vòng lặp
+    try {
+      setIsLoading(true);
+      await getRoute(
+        { latitude: location.latitude, longitude: location.longitude },
+        { latitude: selectedPlace.latitude, longitude: selectedPlace.longitude },
+        mode
+      );
+    } catch (error) {
+      console.error('Error finding route with new transport mode:', error);
+      setRouteError(error instanceof Error ? error.message : 'Lỗi tìm đường');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [transportMode, location, selectedPlace, getRoute]);
   
   // Xử lý khi nhấn giữ trên bản đồ
   const handleLongPress = useCallback(async (event: any) => {
@@ -281,19 +556,31 @@ const MapScreen = () => {
       
       if (place) {
         setSelectedPlace(place);
+        setEndPlaceName(place.name);
         setShowBackButton(true);
+        
+        // Hiển thị giao diện chỉ đường
+        setShowDirectionsUI(true);
         
         // Mở bottom sheet
         setIsBottomSheetExpanded(true);
         animateBottomSheet(height / 2);
         
-        // Nếu có vị trí người dùng, đặt yêu cầu tìm đường
+        // Nếu có vị trí người dùng, tìm đường trực tiếp
         if (location) {
-          setPendingRouteRequest({
-            start: { latitude: location.latitude, longitude: location.longitude },
-            end: { latitude: place.latitude, longitude: place.longitude },
-            mode: transportMode
-          });
+          try {
+            setIsLoading(true);
+            await getRoute(
+              { latitude: location.latitude, longitude: location.longitude },
+              { latitude: place.latitude, longitude: place.longitude },
+              transportMode
+            );
+          } catch (error) {
+            console.error('Error finding route:', error);
+            setRouteError(error instanceof Error ? error.message : 'Lỗi tìm đường');
+          } finally {
+            setIsLoading(false);
+          }
         }
       }
     } catch (error) {
@@ -301,30 +588,41 @@ const MapScreen = () => {
     } finally {
       setIsLoadingReverseGeocode(false);
     }
-  }, [reverseGeocode, animateBottomSheet, height, location, transportMode]);
+  }, [reverseGeocode, animateBottomSheet, height, location, transportMode, getRoute]);
   
   // Chuyển đến màn hình chỉ đường chi tiết
   const navigateToDirections = useCallback(() => {
-    if (location && selectedPlace && route) {
-      router.push({
-        pathname: "/route-directions" as any,
-        params: {
-          startLocation: JSON.stringify({
-            latitude: location.latitude,
-            longitude: location.longitude
-          }),
-          endLocation: JSON.stringify({
-            latitude: selectedPlace.latitude,
-            longitude: selectedPlace.longitude
-          }),
-          place: JSON.stringify(selectedPlace),
-          route: JSON.stringify(route)
-        }
-      });
-    } else {
-      Alert.alert('Thông báo', 'Không thể tìm đường đi. Vui lòng thử lại sau.');
-    }
-  }, [location, selectedPlace, route, router]);
+    if (!location || !selectedPlace) return;
+    
+    console.log('[MapScreen] Navigating to route directions', {
+      startLocation: {
+        latitude: location.latitude,
+        longitude: location.longitude
+      },
+      endLocation: {
+        latitude: selectedPlace.latitude,
+        longitude: selectedPlace.longitude
+      },
+      place: selectedPlace,
+      transportMode
+    });
+    
+    router.push({
+      pathname: "/route-directions" as any,
+      params: {
+        startLocation: JSON.stringify({
+          latitude: location.latitude,
+          longitude: location.longitude
+        }),
+        endLocation: JSON.stringify({
+          latitude: selectedPlace.latitude,
+          longitude: selectedPlace.longitude
+        }),
+        place: JSON.stringify(selectedPlace),
+        transportMode
+      }
+    });
+  }, [location, selectedPlace, transportMode, router]);
   
   // Đóng/mở bottom sheet
   const toggleBottomSheet = useCallback(() => {
@@ -342,10 +640,16 @@ const MapScreen = () => {
       setMarkerCoords(null);
       setShowBackButton(false);
       setIsBottomSheetExpanded(false);
-      setPendingRouteRequest(null);
+      
+      // Xóa lộ trình
+      clearRoute();
       
       // Thu gọn bottom sheet
       animateBottomSheet(BOTTOM_SHEET_HEIGHT);
+      
+      // Ẩn giao diện chỉ đường
+      setShowDirectionsUI(false);
+      setEndPlaceName('');
       
       // Quay lại vị trí hiện tại
       if (location && mapRef.current) {
@@ -356,131 +660,171 @@ const MapScreen = () => {
           longitudeDelta: 0.01,
         }, 1000);
       }
-      
-      // Chuyển đến tab tìm kiếm nếu đến từ đó
-      if (params?.from === 'search') {
-        router.push('/search' as any);
-      }
-    } else {
-      // Nếu không có địa điểm được chọn, chuyển đến tab tìm kiếm
-      router.push('/search' as any);
     }
-  }, [selectedPlace, location, params?.from, router, animateBottomSheet]);
-
-  // Xử lý nút tìm đường
-  const handleFindRoute = useCallback(() => {
-    if (!location || !selectedPlace) return;
-    
-    // Thay vì gọi findRoute trực tiếp, đặt một yêu cầu tìm đường mới
-    setPendingRouteRequest({
-      start: { latitude: location.latitude, longitude: location.longitude },
-      end: { latitude: selectedPlace.latitude, longitude: selectedPlace.longitude },
-      mode: transportMode
-    });
-  }, [location, selectedPlace, transportMode]);
-
-  // Xử lý nút vị trí hiện tại
+  }, [selectedPlace, location, animateBottomSheet, clearRoute]);
+  
+  // Di chuyển đến vị trí hiện tại
   const handleGoToCurrentLocation = useCallback(() => {
     if (location && mapRef.current) {
-      mapRef.current.animateToRegion({
+      mapRef.current?.animateToRegion({
         latitude: location.latitude,
         longitude: location.longitude,
         latitudeDelta: 0.005,
         longitudeDelta: 0.005,
-      }, 500);
+      }, 1000);
+    } else {
+      getCurrentLocation();
     }
-  }, [location]);
-
-  // Render các nút chọn phương tiện
-  const renderTransportButtons = useMemo(() => {
-    const transportOptions = [
-      { id: 'driving', icon: 'car' as const },
-      { id: 'walking', icon: 'walk' as const },
-      { id: 'cycling', icon: 'bicycle' as const }
-    ];
+  }, [location, getCurrentLocation]);
+  
+  // Xử lý nút tìm đường 
+  const handleFindRoute = useCallback(() => {
+    if (!location || !selectedPlace) return;
     
-    return (
-      <View className="flex-row justify-center mt-2.5">
-        {transportOptions.map(option => (
-          <TouchableOpacity
-            key={option.id}
-            className={`w-11 h-11 rounded-full justify-center items-center mx-2.5 ${
-              transportMode === option.id ? 'bg-primary' : 'bg-lightGrey'
-            }`}
-            onPress={() => changeTransportMode(option.id)}
-            activeOpacity={0.7}
+    setRouteError(null);
+    setShowDirectionsUI(true);
+    
+    try {
+      getRoute(
+        { latitude: location.latitude, longitude: location.longitude },
+        { latitude: selectedPlace.latitude, longitude: selectedPlace.longitude },
+        transportMode
+      );
+    } catch (error) {
+      console.error('Error finding route:', error);
+      setRouteError(error instanceof Error ? error.message : 'Lỗi tìm đường');
+    }
+  }, [location, selectedPlace, transportMode, getRoute]);
+  
+  // Xử lý khi nhấn vào thanh tìm kiếm điểm đầu
+  const handleStartSearch = useCallback(() => {
+    setIsOriginSearch(true);
+    setSearchModalTitle('Chọn điểm xuất phát');
+    setShowSearchModal(true);
+  }, []);
+  
+  // Xử lý khi nhấn vào thanh tìm kiếm điểm đến
+  const handleDestinationSearch = useCallback(() => {
+    setIsOriginSearch(false);
+    setSearchModalTitle('Chọn điểm đến');
+    setShowSearchModal(true);
+  }, []);
+  
+  // Xử lý khi chọn địa điểm từ modal tìm kiếm
+  const handleSelectPlace = useCallback((place: Place) => {
+    if (isOriginSearch) {
+      // Chọn điểm xuất phát
+      setStartPlaceName(place.name);
+      
+      // Nếu đã có điểm đến, tìm đường từ điểm xuất phát mới đến điểm đến
+      if (selectedPlace) {
+        try {
+          setIsLoading(true);
+          getRoute(
+            { latitude: place.latitude, longitude: place.longitude },
+            { latitude: selectedPlace.latitude, longitude: selectedPlace.longitude },
+            transportMode
+          );
+          
+          // Zoom đến khu vực bao gồm điểm xuất phát và điểm đến
+          zoomToTwoLocations(
+            { latitude: place.latitude, longitude: place.longitude },
+            { latitude: selectedPlace.latitude, longitude: selectedPlace.longitude }
+          );
+        } catch (error) {
+          console.error('Error finding route with new start location:', error);
+          setRouteError(error instanceof Error ? error.message : 'Lỗi tìm đường');
+        } finally {
+          setIsLoading(false);
+        }
+      }
+    } else {
+      // Chọn điểm đến
+      setSelectedPlace(place);
+      setMarkerCoords({
+        latitude: place.latitude,
+        longitude: place.longitude
+      });
+      setEndPlaceName(place.name);
+      
+      // Hiển thị nút quay lại
+      setShowBackButton(true);
+      
+      // Hiển thị giao diện chỉ đường
+      setShowDirectionsUI(true);
+      
+      // Nếu có vị trí người dùng, tìm đường trực tiếp
+      if (location) {
+        try {
+          setIsLoading(true);
+          getRoute(
+            { latitude: location.latitude, longitude: location.longitude },
+            { latitude: place.latitude, longitude: place.longitude },
+            transportMode
+          );
+          
+          // Zoom đến khu vực bao gồm người dùng và địa điểm
+          zoomToTwoLocations(
+            { latitude: location.latitude, longitude: location.longitude },
+            { latitude: place.latitude, longitude: place.longitude }
+          );
+        } catch (error) {
+          console.error('Error finding route:', error);
+          setRouteError(error instanceof Error ? error.message : 'Lỗi tìm đường');
+        } finally {
+          setIsLoading(false);
+        }
+      }
+    }
+  }, [isOriginSearch, selectedPlace, location, transportMode, getRoute, zoomToTwoLocations]);
+  
+  // Các nút phương tiện giao thông
+  const renderTransportButtons = useMemo(() => (
+    <View className="flex-row justify-around mt-3 pb-3">
+      {TRANSPORT_MODES.map((mode) => (
+        <TouchableOpacity
+          key={mode.id}
+          className={`items-center py-2 px-4 rounded-md ${transportMode === mode.id ? 'bg-backgroundHighlight' : ''}`}
+          onPress={() => changeTransportMode(mode.id)}
+          disabled={routeLoading || isLoading}
+        >
+          <FontAwesome5
+            name={mode.icon}
+            size={18}
+            color={transportMode === mode.id ? theme.colors.primary : theme.colors.text}
+          />
+          <Text
+            className={`text-xs mt-1 ${transportMode === mode.id ? 'text-primary font-bold' : 'text-textSecondary'}`}
           >
-            <Ionicons 
-              name={option.icon} 
-              size={20} 
-              color={transportMode === option.id ? 'white' : theme.colors.text} 
-            />
-          </TouchableOpacity>
-        ))}
-      </View>
-    );
-  }, [transportMode, changeTransportMode]);
-
-  const isLoading = locationLoading || routeLoading || isLoadingReverseGeocode;
-
-  // Tạo các điểm trên bản đồ (vị trí hiện tại, địa điểm đã chọn, địa điểm yêu thích)
+            {mode.name}
+          </Text>
+        </TouchableOpacity>
+      ))}
+    </View>
+  ), [transportMode, changeTransportMode, routeLoading, isLoading]);
+  
+  // Hiển thị các marker trên bản đồ
   const mapMarkers = useMemo(() => {
     const markers = [];
     
-    // Thêm marker vị trí hiện tại
-    if (location) {
+    // Thêm marker vị trí được chọn
+    if (markerCoords) {
       markers.push(
         <Marker
-          key="current-location"
-          coordinate={{
-            latitude: location.latitude,
-            longitude: location.longitude
-          }}
-          title="Vị trí hiện tại"
-          description={location.address}
-          pinColor={theme.colors.primary}
+          key="selected"
+          coordinate={markerCoords}
+          title={selectedPlace?.name}
+          description={selectedPlace?.address}
         >
-          <FontAwesome5 name="map-marker-alt" size={24} color={theme.colors.primary} />
+          <View className="items-center justify-center">
+            <Ionicons name="location" size={32} color={theme.colors.primary} />
+          </View>
         </Marker>
       );
     }
-    
-    // Thêm marker địa điểm đã chọn
-    if (selectedPlace) {
-      markers.push(
-        <Marker
-          key={selectedPlace.id}
-          coordinate={{
-            latitude: selectedPlace.latitude,
-            longitude: selectedPlace.longitude
-          }}
-          title={selectedPlace.name}
-          description={selectedPlace.address}
-          pinColor={theme.colors.secondary}
-        />
-      );
-    }
-    
-    // Thêm marker các địa điểm yêu thích
-    favorites.forEach(favorite => {
-      markers.push(
-        <Marker
-          key={favorite.id}
-          coordinate={{
-            latitude: favorite.latitude,
-            longitude: favorite.longitude
-          }}
-          title={favorite.name}
-          description={favorite.address}
-          pinColor={theme.colors.accent}
-        >
-          <FontAwesome5 name="star" size={20} color={theme.colors.accent} />
-        </Marker>
-      );
-    });
     
     return markers;
-  }, [location, selectedPlace, favorites]);
+  }, [markerCoords, selectedPlace]);
   
   // Hiển thị đường đi nếu có
   const routePolyline = useMemo(() => {
@@ -489,7 +833,7 @@ const MapScreen = () => {
     }
     
     // Chuyển đổi định dạng tọa độ từ [lng, lat] sang {latitude, longitude}
-    const coordinates = route.geometry.coordinates.map(coord => ({
+    const coordinates = route.geometry.coordinates.map((coord: [number, number]) => ({
       latitude: coord[1],
       longitude: coord[0]
     }));
@@ -505,6 +849,54 @@ const MapScreen = () => {
   
   return (
     <View className="flex-1 bg-background" style={{ paddingTop: insets.top }}>
+      {/* Header với thanh tìm kiếm */}
+      <View className="px-4 py-2 bg-white shadow-md z-10">
+        {!showDirectionsUI ? (
+          // UI tìm kiếm mặc định
+          <SearchBar 
+            placeholder="Tìm kiếm địa điểm" 
+            value=""
+            onPress={handleDestinationSearch}
+          />
+        ) : (
+          // UI tìm đường với điểm đầu/điểm cuối
+          <View>
+            <SearchBar 
+              isFrom={true}
+              placeholder="Vị trí hiện tại"
+              value={startPlaceName} 
+              onPress={handleStartSearch}
+            />
+            
+            <View className="h-[1] bg-border my-2 mx-10" />
+            
+            <SearchBar 
+              isFrom={false}
+              placeholder="Chọn điểm đến"
+              value={endPlaceName}
+              onPress={handleDestinationSearch} 
+            />
+            
+            {/* Nút tắt chế độ chỉ đường */}
+            <TouchableOpacity 
+              className="absolute right-0 top-[48%] transform -translate-y-1/2 w-8 h-8 rounded-full bg-white shadow-sm justify-center items-center"
+              onPress={handleBackPress}
+            >
+              <Ionicons name="close" size={20} color={theme.colors.text} />
+            </TouchableOpacity>
+          </View>
+        )}
+      </View>
+      
+      {/* Modal tìm kiếm */}
+      <SearchModal
+        visible={showSearchModal}
+        onClose={() => setShowSearchModal(false)}
+        onSelectPlace={handleSelectPlace}
+        isOriginSearch={isOriginSearch}
+        title={searchModalTitle}
+      />
+      
       {/* Bản đồ */}
       <MapView
         ref={mapRef}
@@ -523,17 +915,6 @@ const MapScreen = () => {
         {routePolyline}
       </MapView>
 
-      {/* Nút back - chỉ hiển thị khi có địa điểm được chọn */}
-      {showBackButton && (
-        <TouchableOpacity 
-          className="absolute left-4 w-10 h-10 rounded-full bg-white justify-center items-center shadow-md"
-          style={{ top: insets.top + 10 }}
-          onPress={handleBackPress}
-        >
-          <Ionicons name="arrow-back" size={24} color={theme.colors.text} />
-        </TouchableOpacity>
-      )}
-
       {/* Nút vị trí hiện tại */}
       <TouchableOpacity 
         className="absolute right-4 w-[46px] h-[46px] rounded-full bg-white justify-center items-center shadow-md"
@@ -544,45 +925,45 @@ const MapScreen = () => {
       </TouchableOpacity>
       
       {/* Loading indicator */}
-      {isLoading && (
+      {(isLoading || routeLoading || isLoadingReverseGeocode) && (
         <View className="absolute inset-0 justify-center items-center bg-white/40">
           <ActivityIndicator size="large" color={theme.colors.primary} />
         </View>
       )}
       
-      {/* Bottom sheet info */}
-      <Animated.View 
-        className="absolute bottom-0 left-0 right-0 bg-white rounded-t-[20px] shadow-lg"
-        style={{ 
-          height: slideAnim,
-          shadowColor: "#000",
-          shadowOffset: { width: 0, height: -3 },
-          shadowOpacity: 0.1,
-          shadowRadius: 5,
-          elevation: 10,
-          paddingHorizontal: 20,
-          paddingTop: 12,
-          paddingBottom: 20
-        }}
-      >
-        {/* Handle để kéo mở bottom sheet */}
-        <TouchableOpacity 
-          className="items-center pb-3" 
-          onPress={toggleBottomSheet}
-          activeOpacity={0.7}
-          style={{ marginBottom: 5 }}
+      {/* Bottom sheet info - chỉ hiển thị khi có địa điểm */}
+      {selectedPlace && (
+        <Animated.View 
+          className="absolute bottom-0 left-0 right-0 bg-white rounded-t-[20px] shadow-lg"
+          style={{ 
+            height: slideAnim,
+            shadowColor: "#000",
+            shadowOffset: { width: 0, height: -3 },
+            shadowOpacity: 0.1,
+            shadowRadius: 5,
+            elevation: 10,
+            paddingHorizontal: 20,
+            paddingTop: 12,
+            paddingBottom: 20
+          }}
         >
-          <View className="w-10 h-[5px] rounded-sm bg-border" />
-          <Ionicons 
-            name={isBottomSheetExpanded ? "chevron-down" : "chevron-up"} 
-            size={18} 
-            color={theme.colors.textSecondary} 
-            style={{ marginTop: 6 }}
-          />
-        </TouchableOpacity>
+          {/* Handle để kéo mở bottom sheet */}
+          <TouchableOpacity 
+            className="items-center pb-3" 
+            onPress={toggleBottomSheet}
+            activeOpacity={0.7}
+            style={{ marginBottom: 5 }}
+          >
+            <View className="w-10 h-[5px] rounded-sm bg-border" />
+            <Ionicons 
+              name={isBottomSheetExpanded ? "chevron-down" : "chevron-up"} 
+              size={18} 
+              color={theme.colors.textSecondary} 
+              style={{ marginTop: 6 }}
+            />
+          </TouchableOpacity>
 
-        {/* Thông tin địa điểm */}
-        {selectedPlace && (
+          {/* Thông tin địa điểm */}
           <View className="mt-1">
             <Text className="text-xl font-bold text-text">{selectedPlace.name}</Text>
             <Text className="text-sm text-textSecondary mt-1" numberOfLines={isBottomSheetExpanded ? 0 : 2}>
@@ -607,7 +988,7 @@ const MapScreen = () => {
                 )}
                 
                 {/* Nút tìm đường */}
-                {location && !route && !routeLoading && !pendingRouteRequest && (
+                {location && !route && !routeLoading && !isLoading && (
                   <TouchableOpacity 
                     className="flex-row justify-center items-center bg-primary rounded-md py-3.5 mt-5 shadow-sm"
                     onPress={handleFindRoute}
@@ -658,20 +1039,11 @@ const MapScreen = () => {
               </TouchableOpacity>
             )}
           </View>
-        )}
-        
-        {/* Hiển thị thông báo khi không có địa điểm nào được chọn */}
-        {!selectedPlace && (
-          <View className="items-center justify-center py-5">
-            <Ionicons name="search" size={28} color={theme.colors.textSecondary} />
-            <Text className="text-textSecondary text-base mt-2 text-center">
-              Tìm kiếm hoặc chọn địa điểm trên bản đồ để xem thông tin chi tiết
-            </Text>
-          </View>
-        )}
-      </Animated.View>
+        </Animated.View>
+      )}
     </View>
   );
 };
 
 export default MapScreen;
+ 

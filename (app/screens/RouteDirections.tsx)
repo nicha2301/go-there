@@ -1,0 +1,418 @@
+import { Ionicons } from '@expo/vector-icons';
+import { useLocalSearchParams, useNavigation } from 'expo-router';
+import React, { useEffect, useState } from 'react';
+import {
+  FlatList,
+  SafeAreaView,
+  Share,
+  Text,
+  TouchableOpacity,
+  View
+} from 'react-native';
+import MapView, { Marker, Polyline, PROVIDER_DEFAULT } from 'react-native-maps';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import theme from '../constants/theme';
+
+interface Coordinates {
+  latitude: number;
+  longitude: number;
+}
+
+interface Place {
+  id: string | number;
+  name: string;
+  address: string;
+  latitude: number;
+  longitude: number;
+  category?: string;
+  distance?: string;
+  rating?: number;
+}
+
+interface Maneuver {
+  type?: string;
+  instruction?: string;
+  [key: string]: any;
+}
+
+interface RouteStep {
+  distance: number;
+  duration: number;
+  maneuver?: Maneuver;
+  [key: string]: any;
+}
+
+interface RouteData {
+  geometry: {
+    coordinates: [number, number][];
+  };
+  distance: number;
+  duration: number;
+  formattedDistance: string;
+  formattedDuration: string;
+  startPoint: Coordinates;
+  endPoint: Coordinates;
+  transportMode: string;
+  steps?: RouteStep[];
+}
+
+// Icons cho các bước chỉ đường
+const MANEUVER_ICONS: Record<string, string> = {
+  'straight': 'arrow-up',
+  'turn-right': 'arrow-forward',
+  'turn-left': 'arrow-back',
+  'turn-slight-right': 'arrow-up-circle',
+  'turn-slight-left': 'arrow-up-circle',
+  'turn-sharp-right': 'arrow-forward-circle',
+  'turn-sharp-left': 'arrow-back-circle',
+  'uturn-right': 'refresh',
+  'uturn-left': 'refresh',
+  'roundabout-right': 'sync',
+  'roundabout-left': 'sync',
+  'keep-right': 'arrow-forward',
+  'keep-left': 'arrow-back',
+  'depart': 'flag',
+  'arrive': 'flag-outline',
+  'default': 'navigate'
+};
+
+const RouteDirections = () => {
+  const insets = useSafeAreaInsets();
+  const navigation = useNavigation();
+  const params = useLocalSearchParams();
+  
+  const [startLocation, setStartLocation] = useState<Coordinates | null>(null);
+  const [endLocation, setEndLocation] = useState<Coordinates | null>(null);
+  const [place, setPlace] = useState<Place | null>(null);
+  const [route, setRoute] = useState<RouteData | null>(null);
+  const [transportMode, setTransportMode] = useState<string>('driving');
+  
+  // Lấy dữ liệu từ params
+  useEffect(() => {
+    if (params) {
+      if (params.startLocation) {
+        try {
+          setStartLocation(
+            typeof params.startLocation === 'string'
+              ? JSON.parse(params.startLocation as string) as Coordinates
+              : params.startLocation as unknown as Coordinates
+          );
+        } catch (error) {
+          console.error('Error parsing start location:', error);
+        }
+      }
+      
+      if (params.endLocation) {
+        try {
+          setEndLocation(
+            typeof params.endLocation === 'string'
+              ? JSON.parse(params.endLocation as string) as Coordinates
+              : params.endLocation as unknown as Coordinates
+          );
+        } catch (error) {
+          console.error('Error parsing end location:', error);
+        }
+      }
+      
+      if (params.place) {
+        try {
+          setPlace(
+            typeof params.place === 'string'
+              ? JSON.parse(params.place as string) as Place
+              : params.place as unknown as Place
+          );
+        } catch (error) {
+          console.error('Error parsing place data:', error);
+        }
+      }
+      
+      if (params.route) {
+        try {
+          const routeData = JSON.parse(params.route as string) as RouteData;
+          setRoute(routeData);
+          
+          if (routeData.transportMode) {
+            setTransportMode(routeData.transportMode);
+          }
+        } catch (error) {
+          console.error('Error parsing route data:', error);
+        }
+      }
+    }
+  }, [params]);
+  
+  // Hiển thị icon cho từng loại maneuver
+  const getManeuverIcon = (maneuver?: Maneuver): string => {
+    if (!maneuver || !maneuver.type) {
+      return MANEUVER_ICONS.default;
+    }
+    
+    return MANEUVER_ICONS[maneuver.type] || MANEUVER_ICONS.default;
+  };
+  
+  // Tạo hướng dẫn cho từng bước
+  const getInstructionText = (step: RouteStep, index: number): string => {
+    if (index === 0) {
+      return 'Bắt đầu hành trình';
+    }
+    
+    if (!step.maneuver || !step.maneuver.type) {
+      return 'Tiếp tục hành trình';
+    }
+    
+    switch (step.maneuver.type) {
+      case 'straight':
+        return 'Đi thẳng';
+      case 'turn-right':
+        return 'Rẽ phải';
+      case 'turn-left':
+        return 'Rẽ trái';
+      case 'turn-slight-right':
+        return 'Rẽ nhẹ phải';
+      case 'turn-slight-left':
+        return 'Rẽ nhẹ trái';
+      case 'turn-sharp-right':
+        return 'Rẽ gắt phải';
+      case 'turn-sharp-left':
+        return 'Rẽ gắt trái';
+      case 'uturn-right':
+        return 'Quay đầu bên phải';
+      case 'uturn-left':
+        return 'Quay đầu bên trái';
+      case 'roundabout-right':
+      case 'roundabout-left':
+        return 'Đi vào vòng xuyến';
+      case 'keep-right':
+        return 'Giữ bên phải';
+      case 'keep-left':
+        return 'Giữ bên trái';
+      case 'depart':
+        return 'Xuất phát';
+      case 'arrive':
+        return 'Đã đến điểm đích';
+      default:
+        return 'Tiếp tục hành trình';
+    }
+  };
+  
+  // Chia sẻ thông tin lộ trình
+  const shareRoute = async () => {
+    if (!route) return;
+    
+    try {
+      const { startPoint, endPoint, formattedDistance, formattedDuration } = route;
+      
+      const message = 
+        `Chỉ đường từ:\n` +
+        `- Điểm đầu: ${startPoint.latitude}, ${startPoint.longitude}\n` +
+        `- Điểm cuối: ${endPoint.latitude}, ${endPoint.longitude}\n` +
+        `- Khoảng cách: ${formattedDistance}\n` +
+        `- Thời gian: ${formattedDuration}\n` +
+        `Được chia sẻ từ ứng dụng Go There`;
+      
+      await Share.share({
+        message,
+        title: 'Thông tin chỉ đường'
+      });
+    } catch (error) {
+      console.error('Error sharing route:', error);
+    }
+  };
+  
+  // Icon cho từng loại phương tiện
+  const getTransportIcon = (mode: string): string => {
+    switch (mode) {
+      case 'driving':
+        return 'car';
+      case 'walking':
+        return 'walk';
+      case 'cycling':
+        return 'bicycle';
+      default:
+        return 'navigate';
+    }
+  };
+  
+  // Tên cho từng loại phương tiện
+  const getTransportName = (mode: string): string => {
+    switch (mode) {
+      case 'driving':
+        return 'Lái xe';
+      case 'walking':
+        return 'Đi bộ';
+      case 'cycling':
+        return 'Đạp xe';
+      default:
+        return 'Điều hướng';
+    }
+  };
+  
+  // Nếu không có dữ liệu
+  if (!startLocation || !endLocation || !place || !route) {
+    return (
+      <View className="flex-1 justify-center items-center bg-background">
+        <ActivityIndicator size="large" color={theme.colors.primary} />
+        <Text className="text-base text-text mt-4">Đang tải dữ liệu...</Text>
+      </View>
+    );
+  }
+
+  return (
+    <View className="flex-1 bg-background" style={{ paddingTop: insets.top }}>
+      {/* Header */}
+      <View className="flex-row items-center justify-between px-4 py-2.5 bg-card">
+        <TouchableOpacity 
+          className="w-10 h-10 rounded-full justify-center items-center"
+          onPress={() => navigation.goBack()}
+        >
+          <Ionicons name="arrow-back" size={24} color={theme.colors.text} />
+        </TouchableOpacity>
+        
+        <Text className="text-lg font-bold text-text">Chỉ đường chi tiết</Text>
+        
+        <TouchableOpacity 
+          className="w-10 h-10 rounded-full justify-center items-center"
+          onPress={shareRoute}
+        >
+          <Ionicons name="share-outline" size={24} color={theme.colors.primary} />
+        </TouchableOpacity>
+      </View>
+      
+      {/* Thông tin tổng quan */}
+      <View className="bg-card p-4 mb-2">
+        <View className="flex-row items-center mb-3">
+          <Ionicons name={getTransportIcon(transportMode)} size={24} color={theme.colors.primary} />
+          <Text className="text-base font-bold text-text ml-2">{getTransportName(transportMode)}</Text>
+          
+          <View className="flex-row items-center ml-auto">
+            <Ionicons name="time-outline" size={18} color={theme.colors.primary} />
+            <Text className="text-base font-semibold text-text ml-1">{route.formattedDuration}</Text>
+            
+            <View className="w-[1px] h-4 bg-border mx-2" />
+            
+            <Ionicons name="resize-outline" size={18} color={theme.colors.primary} />
+            <Text className="text-base font-semibold text-text ml-1">{route.formattedDistance}</Text>
+          </View>
+        </View>
+        
+        <View className="flex-row items-center">
+          <View className="w-1.5 h-1.5 rounded-full bg-success mr-1.5" />
+          <Text className="text-base text-text flex-1" numberOfLines={1}>
+            Vị trí hiện tại
+          </Text>
+        </View>
+        
+        <View className="w-[1px] h-5 bg-border ml-0.5 my-1" />
+        
+        <View className="flex-row items-center">
+          <View className="w-1.5 h-1.5 rounded-full bg-primary mr-1.5" />
+          <Text className="text-base text-text flex-1" numberOfLines={1}>
+            {place.name}
+          </Text>
+        </View>
+      </View>
+      
+      {/* Bản đồ nhỏ hiển thị tổng quan lộ trình */}
+      <View className="h-56 bg-background mb-2">
+        <MapView
+          style={{ flex: 1 }}
+          provider={PROVIDER_DEFAULT}
+          initialRegion={{
+            latitude: (startLocation.latitude + endLocation.latitude) / 2,
+            longitude: (startLocation.longitude + endLocation.longitude) / 2,
+            latitudeDelta: 0.1,
+            longitudeDelta: 0.1
+          }}
+          showsUserLocation={false}
+          showsMyLocationButton={false}
+          toolbarEnabled={false}
+          showsCompass={false}
+          zoomEnabled={true}
+          scrollEnabled={true}
+          rotateEnabled={false}
+        >
+          {/* Marker cho điểm đầu */}
+          <Marker coordinate={startLocation}>
+            <View className="items-center justify-center">
+              <Ionicons name="locate" size={24} color={theme.colors.success} />
+            </View>
+          </Marker>
+          
+          {/* Marker cho điểm cuối */}
+          <Marker coordinate={endLocation}>
+            <View className="items-center justify-center">
+              <Ionicons name="location" size={28} color={theme.colors.primary} />
+            </View>
+          </Marker>
+          
+          {/* Đường đi */}
+          {route.geometry.coordinates.length > 0 && (
+            <Polyline
+              coordinates={route.geometry.coordinates.map(coord => ({
+                latitude: coord[1],
+                longitude: coord[0]
+              }))}
+              strokeWidth={4}
+              strokeColor={theme.colors.primary}
+            />
+          )}
+        </MapView>
+      </View>
+      
+      {/* Danh sách các bước chỉ đường */}
+      <SafeAreaView className="flex-1 bg-background">
+        <FlatList
+          data={route.steps || []}
+          keyExtractor={(item, index) => `step-${index}`}
+          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 20 }}
+          ListHeaderComponent={() => (
+            <View className="py-2 border-b border-border">
+              <Text className="text-base font-bold text-text">Chi tiết hành trình</Text>
+            </View>
+          )}
+          renderItem={({ item, index }) => (
+            <View className="flex-row py-3 border-b border-border">
+              <View className="mr-3 items-center">
+                <View className="w-8 h-8 rounded-full bg-lightGrey justify-center items-center">
+                  <Ionicons 
+                    name={getManeuverIcon(item.maneuver)} 
+                    size={16} 
+                    color={theme.colors.primary} 
+                  />
+                </View>
+                {index < (route.steps?.length || 0) - 1 && (
+                  <View className="w-[1px] h-12 bg-border mt-1" />
+                )}
+              </View>
+              
+              <View className="flex-1">
+                <Text className="text-base font-semibold text-text">
+                  {getInstructionText(item, index)}
+                </Text>
+                
+                {item.distance > 0 && (
+                  <Text className="text-sm text-textSecondary mt-1">
+                    {item.distance < 1000 
+                      ? `${Math.round(item.distance)} m` 
+                      : `${(item.distance / 1000).toFixed(1)} km`}
+                    {item.duration > 0 && ` (${Math.ceil(item.duration / 60)} phút)`}
+                  </Text>
+                )}
+              </View>
+            </View>
+          )}
+          ListEmptyComponent={() => (
+            <View className="py-4 items-center">
+              <Ionicons name="alert-circle-outline" size={24} color={theme.colors.textSecondary} />
+              <Text className="text-base text-textSecondary mt-2">
+                Không có thông tin chi tiết về lộ trình
+              </Text>
+            </View>
+          )}
+        />
+      </SafeAreaView>
+    </View>
+  );
+};
+
+export default RouteDirections; 

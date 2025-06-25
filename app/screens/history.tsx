@@ -13,7 +13,6 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import PlaceItem from '../components/PlaceItem';
 import theme from '../constants/theme';
-import useFavorites from '../hooks/useFavorites';
 import usePlaces from '../hooks/usePlaces';
 import { clearHistory, removeFromHistory } from '../services/storageService';
 
@@ -26,19 +25,12 @@ interface Place {
   [key: string]: any; // Cho phép các thuộc tính khác
 }
 
-// Định nghĩa kiểu dữ liệu cho Favorites
-interface FavoritesState {
-  [key: string]: boolean;
-}
-
 export default function HistoryScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const navigation = useNavigation();
   const { loadHistory, history, loading } = usePlaces();
-  const { checkIsFavorite, toggleFavorite } = useFavorites();
   
-  const [favorites, setFavorites] = useState<FavoritesState>({});
   const [isDeleting, setIsDeleting] = useState(false);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   
@@ -57,53 +49,49 @@ export default function HistoryScreen() {
     };
   }, [navigation]);
   
-  // Cập nhật trạng thái yêu thích của từng địa điểm
-  useEffect(() => {
-    const updateFavoriteStatus = async () => {
-      const favoriteStatus: FavoritesState = {};
-      
-      for (const place of history as Place[]) {
-        favoriteStatus[place.id.toString()] = await checkIsFavorite(place.id);
-      }
-      
-      setFavorites(favoriteStatus);
-    };
-    
-    if (history && history.length > 0) {
-      updateFavoriteStatus();
-    }
-  }, [history, checkIsFavorite]);
-  
   // Xử lý khi chọn một địa điểm
   const handleSelectPlace = (place: Place) => {
     router.push({
-      pathname: "/screens/PlaceDetail" as any,
+      pathname: "/" as any,
       params: { place: JSON.stringify(place) }
     });
   };
   
   // Xử lý khi nhấn nút tìm kiếm
   const handleSearchPress = () => {
-    router.push("/search" as any);
-  };
-  
-  // Xử lý khi toggle trạng thái yêu thích
-  const handleToggleFavorite = async (place: Place) => {
-    await toggleFavorite(place);
-    setFavorites(prev => ({
-      ...prev,
-      [place.id.toString()]: !prev[place.id.toString()]
-    }));
+    router.push("/" as any);
   };
   
   // Xử lý xóa một mục khỏi lịch sử
-  const handleRemoveHistoryItem = async (placeId: string | number) => {
-    await removeFromHistory(placeId);
-    loadHistory();
+  const handleRemoveItem = async (placeId: string | number) => {
+    setIsDeleting(true);
+    try {
+      await removeFromHistory(placeId);
+      loadHistory(); // Tải lại danh sách sau khi xóa
+    } catch (error) {
+      console.error('Error removing history item:', error);
+    } finally {
+      setIsDeleting(false);
+    }
   };
   
   // Xử lý xóa toàn bộ lịch sử
-  const handleClearHistory = () => {
+  const handleClearHistory = async () => {
+    setIsDeleting(true);
+    
+    try {
+      await clearHistory();
+      loadHistory(); // Tải lại danh sách sau khi xóa
+    } catch (error) {
+      console.error('Error clearing history:', error);
+    } finally {
+      setIsDeleting(false);
+      setShowConfirmDialog(false);
+    }
+  };
+  
+  // Hiển thị xác nhận xóa
+  const showClearConfirmation = () => {
     Alert.alert(
       "Xóa lịch sử",
       "Bạn có chắc muốn xóa toàn bộ lịch sử tìm kiếm?",
@@ -115,56 +103,65 @@ export default function HistoryScreen() {
         {
           text: "Xóa",
           style: "destructive",
-          onPress: async () => {
-            await clearHistory();
-            loadHistory();
-          }
+          onPress: handleClearHistory
         }
       ]
     );
   };
   
-  // Định dạng thời gian
+  // Format thời gian
   const formatTime = (timestamp: number | string) => {
+    if (!timestamp) return '';
+    
     const date = new Date(timestamp);
     const now = new Date();
     
-    // Nếu cùng ngày, hiển thị giờ
+    // Nếu cùng ngày, chỉ hiển thị giờ
     if (date.toDateString() === now.toDateString()) {
-      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    }
+      return date.toLocaleTimeString('vi-VN', { 
+        hour: '2-digit', 
+        minute: '2-digit' 
+      });
+    } 
     
-    // Nếu cùng tuần, hiển thị thứ
+    // Nếu trong vòng 7 ngày, hiển thị thứ
     const daysDiff = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
     if (daysDiff < 7) {
-      const days = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
-      return `${days[date.getDay()]}, ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+      const days = ['CN', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'];
+      return `${days[date.getDay()]}, ${date.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}`;
     }
     
     // Khác thì hiển thị ngày tháng
-    return date.toLocaleDateString();
+    return date.toLocaleDateString('vi-VN', {
+      day: '2-digit',
+      month: '2-digit',
+      year: '2-digit'
+    });
   };
   
   // Render mỗi item trong danh sách
   const renderItem = ({ item }: { item: Place }) => (
-    <View className="mb-5">
+    <View className="mb-4">
       <View className="px-3 mb-1.5">
-        <Text className="text-xs text-textSecondary font-medium">{formatTime(item.timestamp || Date.now())}</Text>
+        <Text className="text-xs text-textSecondary font-medium">
+          <Ionicons name="time-outline" size={12} color={theme.colors.grey} />
+          {' '}{formatTime(item.timestamp || Date.now())}
+        </Text>
       </View>
       
       <View className="relative">
         <PlaceItem
           place={item}
-          isFavorite={favorites[item.id.toString()] || false}
-          onFavoriteToggle={handleToggleFavorite}
           onPress={() => handleSelectPlace(item)}
+          showDistance={false}
         />
         
         <TouchableOpacity 
-          className="absolute -top-2 -right-2 bg-background rounded-xl p-0.5"
-          onPress={() => handleRemoveHistoryItem(item.id)}
+          className="absolute top-2 right-2 p-2"
+          onPress={() => handleRemoveItem(item.id)}
+          disabled={isDeleting}
         >
-          <Ionicons name="close-circle" size={22} color={theme.colors.error} />
+          <Ionicons name="close-circle" size={20} color={theme.colors.grey} />
         </TouchableOpacity>
       </View>
     </View>
@@ -176,7 +173,7 @@ export default function HistoryScreen() {
         <Text className="text-2xl font-bold text-text">Lịch sử tìm kiếm</Text>
         
         {history && history.length > 0 && (
-          <TouchableOpacity onPress={handleClearHistory}>
+          <TouchableOpacity onPress={showClearConfirmation}>
             <Text className="text-sm text-error font-bold">Xóa tất cả</Text>
           </TouchableOpacity>
         )}
@@ -205,7 +202,7 @@ export default function HistoryScreen() {
                 className="mt-6 py-3 px-6 bg-primary rounded-md shadow-sm"
                 onPress={handleSearchPress}
               >
-                <Text className="text-white font-bold">Tìm kiếm địa điểm</Text>
+                <Text className="text-white font-bold">Xem bản đồ</Text>
               </TouchableOpacity>
             </View>
           }

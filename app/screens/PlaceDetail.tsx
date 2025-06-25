@@ -16,7 +16,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import theme from '../constants/theme';
 import useLocation from '../hooks/useLocation';
 import useRoute from '../hooks/useRoute';
-import { isInFavorites, removeFromFavorites, saveToFavorites } from '../services/storageService';
 
 interface Place {
   id: string | number;
@@ -41,7 +40,6 @@ const PlaceDetail = () => {
   const params = useLocalSearchParams();
   
   const [place, setPlace] = useState<Place | null>(null);
-  const [isFavorite, setIsFavorite] = useState(false);
   const [loading, setLoading] = useState(true);
   const hasLoadedData = useRef(false);
   
@@ -61,10 +59,6 @@ const PlaceDetail = () => {
             : params.place as unknown as Place;
           
           setPlace(placeData);
-          
-          // Kiểm tra xem địa điểm có trong yêu thích không - sử dụng hàm từ service trực tiếp
-          const status = await isInFavorites(placeData.id);
-          setIsFavorite(status);
           hasLoadedData.current = true;
         } catch (error) {
           console.error('Error parsing place data:', error);
@@ -75,22 +69,6 @@ const PlaceDetail = () => {
     
     loadData();
   }, [params]);
-  
-  // Xử lý toggle yêu thích
-  const handleToggleFavorite = async () => {
-    if (place) {
-      try {
-        if (isFavorite) {
-          await removeFromFavorites(place.id);
-        } else {
-          await saveToFavorites(place);
-        }
-        setIsFavorite(!isFavorite);
-      } catch (error) {
-        console.error('Error toggling favorite:', error);
-      }
-    }
-  };
   
   // Xử lý chỉ đường
   const handleNavigate = async () => {
@@ -190,17 +168,6 @@ const PlaceDetail = () => {
             onPress={handleShare}
           >
             <Ionicons name="share-outline" size={24} color={theme.colors.text} />
-          </TouchableOpacity>
-          
-          <TouchableOpacity 
-            className="w-10 h-10 rounded-full bg-card justify-center items-center ml-3 shadow-sm"
-            onPress={handleToggleFavorite}
-          >
-            <Ionicons 
-              name={isFavorite ? "heart" : "heart-outline"} 
-              size={24} 
-              color={isFavorite ? theme.colors.error : theme.colors.text} 
-            />
           </TouchableOpacity>
         </View>
       </View>

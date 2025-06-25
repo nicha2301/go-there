@@ -23,7 +23,7 @@ const StyledView = styled(View);
 const StyledText = styled(Text);
 const StyledTouchableOpacity = styled(TouchableOpacity);
 
-const PlaceItem = ({ place, isFavorite, onFavoriteToggle, showDistance = true, onPress }) => {
+const PlaceItem = ({ place, showDistance = true, onPress }) => {
   const router = useRouter();
   
   // Xác định icon dựa trên danh mục
@@ -40,13 +40,6 @@ const PlaceItem = ({ place, isFavorite, onFavoriteToggle, showDistance = true, o
         pathname: "/screens/PlaceDetail",
         params: { place: JSON.stringify(place) }
       });
-    }
-  };
-  
-  // Xử lý khi click vào icon yêu thích
-  const handleFavoritePress = () => {
-    if (onFavoriteToggle) {
-      onFavoriteToggle(place);
     }
   };
 
@@ -76,19 +69,6 @@ const PlaceItem = ({ place, isFavorite, onFavoriteToggle, showDistance = true, o
           </StyledText>
         )}
       </StyledView>
-      
-      {onFavoriteToggle && (
-        <StyledTouchableOpacity 
-          className="p-2"
-          onPress={handleFavoritePress}
-        >
-          <Ionicons 
-            name={isFavorite ? 'heart' : 'heart-outline'} 
-            size={24} 
-            color={isFavorite ? '#FF3D71' : '#8F9BB3'} 
-          />
-        </StyledTouchableOpacity>
-      )}
     </StyledTouchableOpacity>
   );
 };

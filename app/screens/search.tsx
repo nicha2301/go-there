@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation, useRouter } from 'expo-router';
+import { useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
 import { styled } from 'nativewind';
 import React, { useEffect, useState } from 'react';
 import {
@@ -13,7 +13,6 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import PlaceItem from '../components/PlaceItem';
-import useFavorites from '../hooks/useFavorites';
 import useLocation from '../hooks/useLocation';
 import usePlaces from '../hooks/usePlaces';
 
@@ -37,14 +36,14 @@ export default function SearchScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const navigation = useNavigation();
+  const params = useLocalSearchParams();
   const { search, searchNearby, searchResults, history, loading, loadHistory, selectPlace } = usePlaces();
   const { location, fetchCurrentLocation } = useLocation();
-  const { checkIsFavorite, toggleFavorite } = useFavorites();
   
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
-  const [favorites, setFavorites] = useState({});
   const [showHistory, setShowHistory] = useState(true);
+  const [searchMode, setSearchMode] = useState('normal'); // 'normal', 'origin', 'destination'
 
   // Lấy dữ liệu khi màn hình được mở
   useEffect(() => {
@@ -58,24 +57,25 @@ export default function SearchScreen() {
     
     setup();
   }, []);
-  
-  // Lấy trạng thái yêu thích của từng địa điểm
+
+  // Xử lý tham số từ màn hình khác
   useEffect(() => {
-    const updateFavoriteStatus = async () => {
-      const placesToCheck = showHistory ? [...history] : [...searchResults];
-      if (placesToCheck.length === 0) return;
-      
-      const favoriteStatus = {};
-      
-      for (const place of placesToCheck) {
-        favoriteStatus[place.id] = await checkIsFavorite(place.id);
+    if (params) {
+      // Kiểm tra xem có phải đang tìm điểm xuất phát không
+      if (params.origin === "true") {
+        setSearchMode('origin');
+        setSearchQuery('');
+        setShowHistory(true);
       }
       
-      setFavorites(favoriteStatus);
-    };
-    
-    updateFavoriteStatus();
-  }, [searchResults, history, showHistory, checkIsFavorite]);
+      // Kiểm tra xem có phải đang tìm điểm đến không
+      if (params.destination === "true") {
+        setSearchMode('destination');
+        setSearchQuery('');
+        setShowHistory(true);
+      }
+    }
+  }, [params]);
   
   // Xử lý tìm kiếm
   const handleSearch = async () => {
@@ -117,33 +117,41 @@ export default function SearchScreen() {
   const handleSelectPlace = async (place) => {
     await selectPlace(place);
     
-    // Chuyển đến màn hình bản đồ với địa điểm đã chọn
-    router.push({
-      pathname: "/" as any,
-      params: { 
-        place: JSON.stringify(place),
-        from: 'search'
-      }
-    });
-  };
-  
-  // Xử lý toggle yêu thích
-  const handleToggleFavorite = async (place) => {
-    await toggleFavorite(place);
-    
-    // Cập nhật trạng thái local để UI phản hồi ngay
-    setFavorites(prev => ({
-      ...prev,
-      [place.id]: !prev[place.id]
-    }));
+    // Xử lý khác nhau tùy vào chế độ tìm kiếm
+    if (searchMode === 'origin') {
+      // Quay lại màn hình map với điểm xuất phát đã chọn
+      router.push({
+        pathname: "/",
+        params: { 
+          startPlace: JSON.stringify(place),
+          from: 'search'
+        }
+      });
+    } else if (searchMode === 'destination') {
+      // Quay lại màn hình map với điểm đến đã chọn
+      router.push({
+        pathname: "/",
+        params: { 
+          place: JSON.stringify(place),
+          from: 'search'
+        }
+      });
+    } else {
+      // Chế độ tìm kiếm thông thường
+      router.push({
+        pathname: "/" as any,
+        params: { 
+          place: JSON.stringify(place),
+          from: 'search'
+        }
+      });
+    }
   };
 
   // Hiển thị phần tử trong danh sách
   const renderItem = ({ item }) => (
     <PlaceItem
       place={item}
-      isFavorite={favorites[item.id] || false}
-      onFavoriteToggle={handleToggleFavorite}
       onPress={() => handleSelectPlace(item)}
     />
   );
@@ -183,15 +191,41 @@ export default function SearchScreen() {
     </StyledView>
   );
 
+  // Lấy tiêu đề theo chế độ tìm kiếm
+  const getSearchTitle = () => {
+    if (searchMode === 'origin') {
+      return 'Chọn điểm xuất phát';
+    } else if (searchMode === 'destination') {
+      return 'Chọn điểm đến';
+    } else {
+      return 'Tìm kiếm địa điểm...';
+    }
+  };
+
   return (
     <StyledView className="flex-1 bg-background" style={{ paddingTop: insets.top }}>
+      {/* Header với tiêu đề tùy theo chế độ tìm kiếm */}
+      {searchMode !== 'normal' && (
+        <StyledView className="flex-row items-center px-4 py-2 bg-card">
+          <StyledTouchableOpacity 
+            onPress={() => router.back()}
+            className="mr-3"
+          >
+            <Ionicons name="arrow-back" size={24} color="#3366FF" />
+          </StyledTouchableOpacity>
+          <StyledText className="text-lg font-bold text-text">
+            {getSearchTitle()}
+          </StyledText>
+        </StyledView>
+      )}
+      
       {/* Thanh tìm kiếm */}
       <StyledView className="flex-row items-center px-4 py-2">
         <StyledView className="flex-row items-center flex-1 px-3 py-2 bg-card rounded-medium border border-lightGrey">
           <Ionicons name="search" size={20} color="#8F9BB3" />
           <StyledTextInput
             className="flex-1 ml-2 text-base text-text"
-            placeholder="Tìm kiếm địa điểm..."
+            placeholder={getSearchTitle()}
             placeholderTextColor="#8F9BB3"
             value={searchQuery}
             onChangeText={setSearchQuery}
