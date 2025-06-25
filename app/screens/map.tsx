@@ -17,6 +17,7 @@ import {
 import MapView, { Marker, Polyline, PROVIDER_DEFAULT } from 'react-native-maps';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import theme from '../constants/theme';
+import useDebounce from '../hooks/useDebounce';
 import useLocation from '../hooks/useLocation';
 import useRoute from '../hooks/useRoute';
 import { getAddressFromCoordinates, searchPlaces } from '../services/locationService';
@@ -123,16 +124,25 @@ const SearchModal = ({
   const [loading, setLoading] = useState(false);
   const { location } = useLocation() as { location: LocationType | null };
   
-  // Xử lý tìm kiếm
-  const handleSearch = async () => {
-    if (!searchQuery.trim()) return;
+  // Áp dụng debounce cho searchQuery
+  const debouncedSearchQuery = useDebounce(searchQuery, 500);
+  
+  // Tự động tìm kiếm khi debouncedSearchQuery thay đổi và có giá trị
+  useEffect(() => {
+    if (debouncedSearchQuery && debouncedSearchQuery.trim().length >= 2) {
+      performSearch(debouncedSearchQuery);
+    }
+  }, [debouncedSearchQuery, location]);
+  
+  // Hàm thực hiện tìm kiếm
+  const performSearch = async (query: string) => {
+    if (!query.trim()) return;
     
-    Keyboard.dismiss();
     setLoading(true);
     
     try {
       const results = await searchPlaces(
-        searchQuery, 
+        query, 
         location ? { lat: location.latitude, lng: location.longitude } : undefined
       );
       setSearchResults(results);
@@ -142,6 +152,14 @@ const SearchModal = ({
     } finally {
       setLoading(false);
     }
+  };
+  
+  // Xử lý tìm kiếm thủ công (khi người dùng nhấn nút tìm hoặc Enter)
+  const handleSearch = () => {
+    if (!searchQuery.trim()) return;
+    
+    Keyboard.dismiss();
+    performSearch(searchQuery);
   };
   
   // Xử lý khi chọn một địa điểm
@@ -194,15 +212,18 @@ const SearchModal = ({
             )}
           </View>
           
-          <TouchableOpacity 
-            className="ml-2 px-4 py-2 bg-primary rounded-md"
-            onPress={handleSearch}
-          >
-            <Text className="text-white font-bold">Tìm</Text>
-          </TouchableOpacity>
+          {/* Ẩn nút tìm kiếm vì đã có tính năng debounce */}
+          {searchQuery.length > 0 && debouncedSearchQuery !== searchQuery && (
+            <TouchableOpacity 
+              className="ml-2 px-4 py-2 bg-primary rounded-md"
+              onPress={handleSearch}
+            >
+              <Text className="text-white font-bold">Tìm</Text>
+            </TouchableOpacity>
+          )}
         </View>
         
-        {/* Kết quả tìm kiếm */}
+        {/* Hiển thị indicator khi đang tìm kiếm */}
         {loading ? (
           <View className="flex-1 justify-center items-center">
             <ActivityIndicator size="large" color={theme.colors.primary} />
@@ -608,7 +629,7 @@ const MapScreen = () => {
     });
     
     router.push({
-      pathname: "/route-directions" as any,
+      pathname: "/screens/RouteDirections",
       params: {
         startLocation: JSON.stringify({
           latitude: location.latitude,

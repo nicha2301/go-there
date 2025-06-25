@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import PlaceItem from '../components/PlaceItem';
+import useDebounce from '../hooks/useDebounce';
 import useLocation from '../hooks/useLocation';
 import usePlaces from '../hooks/usePlaces';
 
@@ -44,6 +45,9 @@ export default function SearchScreen() {
   const [selectedCategory, setSelectedCategory] = useState('');
   const [showHistory, setShowHistory] = useState(true);
   const [searchMode, setSearchMode] = useState('normal'); // 'normal', 'origin', 'destination'
+
+  // Áp dụng debounce cho searchQuery
+  const debouncedSearchQuery = useDebounce(searchQuery, 500);
 
   // Lấy dữ liệu khi màn hình được mở
   useEffect(() => {
@@ -77,7 +81,26 @@ export default function SearchScreen() {
     }
   }, [params]);
   
-  // Xử lý tìm kiếm
+  // Tự động tìm kiếm khi debouncedSearchQuery thay đổi
+  useEffect(() => {
+    if (debouncedSearchQuery && debouncedSearchQuery.trim().length >= 2) {
+      performSearch();
+    } else if (debouncedSearchQuery === '') {
+      setShowHistory(true);
+    }
+  }, [debouncedSearchQuery, selectedCategory, location]);
+  
+  // Thực hiện tìm kiếm
+  const performSearch = async () => {
+    if (!debouncedSearchQuery.trim() && !selectedCategory) return;
+    
+    setShowHistory(false);
+    
+    // Tìm kiếm theo từ khóa và danh mục
+    await search(debouncedSearchQuery.trim(), location, selectedCategory || null);
+  };
+  
+  // Xử lý tìm kiếm thủ công (khi người dùng nhấn nút hoặc Enter)
   const handleSearch = async () => {
     if (!searchQuery.trim() && !selectedCategory) return;
     
@@ -244,12 +267,15 @@ export default function SearchScreen() {
           )}
         </StyledView>
         
-        <StyledTouchableOpacity 
-          className="ml-2 px-4 py-2 bg-primary rounded-medium"
-          onPress={handleSearch}
-        >
-          <StyledText className="text-white font-bold">Tìm</StyledText>
-        </StyledTouchableOpacity>
+        {/* Hiện nút tìm kiếm chỉ khi đang nhập và chưa debounce xong */}
+        {searchQuery.length > 0 && debouncedSearchQuery !== searchQuery && (
+          <StyledTouchableOpacity 
+            className="ml-2 px-4 py-2 bg-primary rounded-medium"
+            onPress={handleSearch}
+          >
+            <StyledText className="text-white font-bold">Tìm</StyledText>
+          </StyledTouchableOpacity>
+        )}
       </StyledView>
 
       {/* Danh sách danh mục */}

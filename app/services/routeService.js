@@ -15,6 +15,7 @@ const NOMINATIM_API = 'https://nominatim.openstreetmap.org';
 // Cấu hình retry
 const MAX_RETRIES = 3;
 const RETRY_DELAY = 1000; // 1 giây
+const REQUEST_TIMEOUT = 10000; // 10 giây thay vì 15 giây
 
 /**
  * Hàm tiện ích để chờ một khoảng thời gian
@@ -24,7 +25,7 @@ const RETRY_DELAY = 1000; // 1 giây
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 /**
- * Hàm fetch với cơ chế retry
+ * Hàm fetch với cơ chế retry và timeout
  * @param {string} url - URL cần gọi
  * @param {Object} options - Tùy chọn fetch
  * @param {number} retries - Số lần thử lại còn lại
@@ -32,17 +33,42 @@ const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
  */
 const fetchWithRetry = async (url, options = {}, retries = MAX_RETRIES) => {
   try {
-    const response = await fetch(url, options);
-    if (!response.ok) {
-      throw new Error(`HTTP error! Status: ${response.status}`);
+    // Thêm AbortController để có thể hủy request nếu quá thời gian
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), options.timeout || REQUEST_TIMEOUT);
+    
+    const enhancedOptions = {
+      ...options,
+      signal: controller.signal
+    };
+    
+    try {
+      const response = await fetch(url, enhancedOptions);
+      // Xóa timeout khi request thành công
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! Status: ${response.status}`);
+      }
+      
+      return response;
+    } catch (error) {
+      // Xóa timeout nếu có lỗi
+      clearTimeout(timeoutId);
+      
+      // Nếu lỗi do abort thì đây là lỗi timeout
+      if (error.name === 'AbortError') {
+        throw new Error('Request timeout');
+      }
+      
+      throw error;
     }
-    return response;
   } catch (error) {
     if (retries <= 0) {
       throw error;
     }
     
-    console.log(`Retry fetch (${MAX_RETRIES - retries + 1}/${MAX_RETRIES}): ${url}`);
+    console.log(`[routeService] Retry fetch (${MAX_RETRIES - retries + 1}/${MAX_RETRIES}): ${url}`);
     await delay(RETRY_DELAY);
     return fetchWithRetry(url, options, retries - 1);
   }
@@ -76,6 +102,13 @@ export const checkNetworkConnection = async () => {
  */
 export const findRoute = async (startLat, startLng, endLat, endLng, mode = 'driving') => {
   try {
+    console.log(`[routeService] Finding route from ${startLat},${startLng} to ${endLat},${endLng} by ${mode}`);
+    
+    // Kiểm tra tính hợp lệ của các tham số
+    if (!startLat || !startLng || !endLat || !endLng) {
+      throw new Error('Tọa độ không hợp lệ');
+    }
+    
     // Kiểm tra kết nối mạng trước khi gọi API
     const isConnected = await checkNetworkConnection();
     if (!isConnected) {
@@ -97,27 +130,37 @@ export const findRoute = async (startLat, startLng, endLat, endLng, mode = 'driv
         break;
     }
     
-    // Tạo URL API
-    const url = `${OSRM_API_URL}/${profile}/${startLng},${startLat};${endLng},${endLat}?overview=full&geometries=geojson&steps=true`;
+    // Mã hóa tọa độ để tránh các ký tự đặc biệt
+    const encodedStartLng = encodeURIComponent(startLng.toString());
+    const encodedStartLat = encodeURIComponent(startLat.toString());
+    const encodedEndLng = encodeURIComponent(endLng.toString());
+    const encodedEndLat = encodeURIComponent(endLat.toString());
     
-    // Gọi API với retry
+    // Tạo URL API
+    const url = `${OSRM_API_URL}/${profile}/${encodedStartLng},${encodedStartLat};${encodedEndLng},${encodedEndLat}?overview=full&geometries=geojson&steps=true`;
+    
+    console.log(`[routeService] Calling OSRM API: ${url}`);
+    
+    // Gọi API với retry và timeout
     const response = await fetchWithRetry(url, {
       headers: {
         'Accept': 'application/json',
         'User-Agent': 'GoThereApp/1.0'
       },
-      timeout: 15000
+      timeout: REQUEST_TIMEOUT
     });
     
     const data = await response.json();
     
     // Kiểm tra kết quả
     if (data.code !== 'Ok' || !data.routes || data.routes.length === 0) {
+      console.error('[routeService] API returned invalid response:', data);
       throw new Error('Không tìm thấy đường đi');
     }
     
     // Lấy tuyến đường đầu tiên
     const route = data.routes[0];
+    console.log(`[routeService] Route found: ${formatDistance(route.distance)} - ${formatDuration(route.duration)}`);
     
     // Định dạng kết quả
     return {
@@ -132,7 +175,13 @@ export const findRoute = async (startLat, startLng, endLat, endLng, mode = 'driv
       transportMode: mode
     };
   } catch (error) {
-    console.error('Error finding route:', error);
+    console.error('[routeService] Error finding route:', error);
+    
+    // Kiểm tra loại lỗi để trả về thông báo phù hợp
+    if (error.message.includes('timeout') || error.message.includes('abort')) {
+      throw new Error('Thời gian tìm đường quá lâu. Vui lòng thử lại sau.');
+    }
+    
     throw new Error(`Không thể tìm đường đi: ${error.message}`);
   }
 };

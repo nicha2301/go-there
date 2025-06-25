@@ -2,216 +2,279 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { findRoute, getRouteInstructions } from '../services/routeService';
 
 /**
- * Hook quản lý tìm đường và chỉ đường
- * @returns {Object} Thông tin về tuyến đường và các hàm liên quan
+ * Hook quản lý tìm đường
+ * @returns {Object} Các hàm và trạng thái liên quan đến tìm đường
  */
 const useRoute = () => {
-  console.log('[useRoute] Hook initialized/re-rendered');
-  
   const [route, setRoute] = useState(null);
-  const [instructions, setInstructions] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   
-  // Sử dụng useRef để theo dõi yêu cầu tìm đường đang chờ xử lý
+  // Sử dụng ref để theo dõi request mới nhất
   const pendingRequestRef = useRef(null);
-  const requestQueueRef = useRef([]);
-  const isProcessingRef = useRef(false);
-  const retryCountRef = useRef(0);
-  const MAX_RETRIES = 3;
-  const RETRY_DELAY = 3000; // 3 giây
-
-  // Thêm ref để theo dõi các tham số gọi gần đây để tránh gọi lặp lại
-  const lastRequestParamsRef = useRef(null);
-
+  const routeResultRef = useRef(null);
+  const timeoutIdRef = useRef(null);
+  
+  // Hàng đợi cho các yêu cầu tìm đường
+  const [requestQueue, setRequestQueue] = useState([]);
+  const [isProcessingQueue, setIsProcessingQueue] = useState(false);
+  
+  // Log lại mỗi khi hook được render
+  console.log('[useRoute] Hook initialized/re-rendered');
+  
   /**
-   * Tìm đường đi giữa hai điểm
-   * @param {Object} startLocation - Điểm bắt đầu {latitude, longitude}
-   * @param {Object} endLocation - Điểm kết thúc {latitude, longitude}
-   * @param {string} transportMode - Phương tiện di chuyển (walking, cycling, driving)
-   * @returns {Promise<Object|null>} Thông tin tuyến đường hoặc null nếu có lỗi
+   * Thêm yêu cầu tìm đường vào hàng đợi
+   * @param {Object} request - Yêu cầu tìm đường
+   */
+  const addToQueue = useCallback((request) => {
+    console.log('[useRoute] Adding request to queue', request);
+    
+    // Xóa các request cũ có cùng điểm đầu/cuối và phương tiện
+    setRequestQueue(prevQueue => {
+      // Lọc bỏ các request trùng lặp dựa trên các điểm đầu/cuối và phương tiện
+      const filteredQueue = prevQueue.filter(item => {
+        // Nếu request mới có cùng startLocation, endLocation và transportMode,
+        // loại bỏ request cũ này
+        const isSimilar = 
+          Math.abs(item.startLocation.latitude - request.startLocation.latitude) < 0.0001 &&
+          Math.abs(item.startLocation.longitude - request.startLocation.longitude) < 0.0001 &&
+          Math.abs(item.endLocation.latitude - request.endLocation.latitude) < 0.0001 &&
+          Math.abs(item.endLocation.longitude - request.endLocation.longitude) < 0.0001 &&
+          item.transportMode === request.transportMode;
+        
+        // Giữ lại request nếu khác với request mới
+        return !isSimilar;
+      });
+      
+      // Chỉ giữ lại tối đa 3 request trong hàng đợi để tránh tràn
+      const limitedQueue = filteredQueue.slice(-2);
+      
+      // Thêm request mới vào cuối hàng đợi
+      return [...limitedQueue, request];
+    });
+  }, []);
+  
+  /**
+   * Thực hiện tìm đường
+   * @param {Object} startLocation - Vị trí bắt đầu
+   * @param {Object} endLocation - Vị trí kết thúc
+   * @param {string} transportMode - Phương tiện di chuyển
+   * @returns {Promise<Object>} Thông tin tuyến đường
    */
   const getRoute = useCallback(async (startLocation, endLocation, transportMode = 'driving') => {
-    console.log('[useRoute] getRoute called with', { startLocation, endLocation, transportMode });
-    
-    // Kiểm tra tham số đầu vào
-    if (!startLocation || !endLocation) {
-      console.log('[useRoute] Missing start or end location');
-      setError('Thiếu thông tin điểm bắt đầu hoặc điểm kết thúc');
-      return null;
-    }
-    
-    // Tạo key cho request
-    const requestKey = JSON.stringify({ startLocation, endLocation, transportMode });
-    
-    // Kiểm tra nếu request này giống với request trước đó
-    if (lastRequestParamsRef.current === requestKey) {
-      console.log('[useRoute] Duplicate request detected, returning current route');
-      return route;
-    }
-    
-    // Lưu tham số request hiện tại
-    lastRequestParamsRef.current = requestKey;
-    
-    // Nếu đang có request với cùng tham số, hủy request đó
-    if (pendingRequestRef.current === requestKey) {
-      console.log('[useRoute] Request already pending with same parameters');
-      return null;
-    }
-    
-    // Thêm vào hàng đợi
-    console.log('[useRoute] Adding request to queue');
-    requestQueueRef.current.push({
-      startLocation,
-      endLocation,
-      transportMode,
-      requestKey
-    });
-    
-    // Xử lý hàng đợi nếu chưa có quá trình nào đang chạy
-    if (!isProcessingRef.current) {
-      console.log('[useRoute] Starting queue processing');
-      processQueue();
-    } else {
-      console.log('[useRoute] Queue is already being processed');
-    }
-    
-    return new Promise((resolve) => {
-      // Kiểm tra kết quả sau một khoảng thời gian
-      const checkInterval = setInterval(() => {
-        if (route && pendingRequestRef.current === requestKey) {
-          console.log('[useRoute] Route found, resolving promise');
-          clearInterval(checkInterval);
-          resolve(route);
-        }
-      }, 500);
+    try {
+      console.log('[useRoute] getRoute called with', { startLocation, endLocation, transportMode });
       
-      // Timeout sau 30 giây
-      setTimeout(() => {
-        console.log('[useRoute] Request timeout after 30s');
-        clearInterval(checkInterval);
-        resolve(null);
-      }, 30000);
-    });
-  }, [route]);
-
+      // Kiểm tra dữ liệu đầu vào
+      if (!startLocation || !endLocation) {
+        setError('Thiếu thông tin vị trí');
+        return null;
+      }
+      
+      // Tạo request key để theo dõi
+      const requestKey = `${startLocation.latitude},${startLocation.longitude}-${endLocation.latitude},${endLocation.longitude}-${transportMode}-${Date.now()}`;
+      
+      // Thêm request vào hàng đợi
+      const request = { startLocation, endLocation, transportMode, requestKey };
+      addToQueue(request);
+      
+      // Bắt đầu xử lý hàng đợi nếu chưa chạy
+      if (!isProcessingQueue) {
+        console.log('[useRoute] Starting queue processing');
+        setIsProcessingQueue(true);
+      }
+      
+      // Lưu lại requestKey hiện tại
+      pendingRequestRef.current = requestKey;
+      
+      // Xóa timeout cũ nếu có
+      if (timeoutIdRef.current) {
+        clearTimeout(timeoutIdRef.current);
+      }
+      
+      // Trả về Promise đợi kết quả
+      return new Promise((resolve) => {
+        // Biến để theo dõi trạng thái đã resolve chưa
+        let isResolved = false;
+        
+        // Hàm để resolve kết quả và đảm bảo chỉ resolve một lần
+        const safeResolve = (result) => {
+          if (!isResolved) {
+            isResolved = true;
+            console.log('[useRoute] Resolving promise with result:', result ? 'found' : 'not found');
+            resolve(result);
+          }
+        };
+        
+        // Kiểm tra kết quả sau một khoảng thời gian
+        const checkInterval = setInterval(() => {
+          // Nếu request hiện tại khớp với request chúng ta đang đợi
+          if (pendingRequestRef.current === requestKey) {
+            if (routeResultRef.current) {
+              console.log('[useRoute] Route found in interval check, resolving promise');
+              clearInterval(checkInterval);
+              safeResolve(routeResultRef.current);
+              // Reset routeResultRef sau khi đã resolve
+              routeResultRef.current = null;
+            }
+          } else {
+            // Nếu có request mới, hủy interval và resolve null
+            console.log('[useRoute] Request superseded, clearing interval');
+            clearInterval(checkInterval);
+            safeResolve(null);
+          }
+        }, 500);
+        
+        // Timeout sau 15 giây
+        timeoutIdRef.current = setTimeout(() => {
+          console.log('[useRoute] Request timeout after 15s');
+          clearInterval(checkInterval);
+          
+          // Kiểm tra một lần cuối cùng xem đã có route chưa
+          if (route && pendingRequestRef.current === requestKey) {
+            console.log('[useRoute] Route available despite timeout, returning');
+            safeResolve(route);
+          } else if (routeResultRef.current && pendingRequestRef.current === requestKey) {
+            console.log('[useRoute] RouteResult available despite timeout, returning');
+            safeResolve(routeResultRef.current);
+          } else {
+            console.log('[useRoute] No route available after timeout');
+            safeResolve(null);
+          }
+        }, 15000);
+      });
+    } catch (error) {
+      console.error('[useRoute] Error in getRoute:', error);
+      setError(error.message);
+      return null;
+    }
+  }, [addToQueue, isProcessingQueue, route]);
+  
   /**
    * Xử lý hàng đợi yêu cầu tìm đường
    */
-  const processQueue = useCallback(async () => {
-    console.log('[useRoute] Processing queue, length:', requestQueueRef.current.length);
-    
-    if (requestQueueRef.current.length === 0) {
-      console.log('[useRoute] Queue empty, stopping processing');
-      isProcessingRef.current = false;
+  useEffect(() => {
+    // Nếu không có request nào trong hàng đợi hoặc đang xử lý request khác, không làm gì
+    if (requestQueue.length === 0 || loading || !isProcessingQueue) {
       return;
     }
     
-    isProcessingRef.current = true;
-    
-    // Lấy yêu cầu tiếp theo từ hàng đợi
-    const { startLocation, endLocation, transportMode, requestKey } = requestQueueRef.current.shift();
-    console.log('[useRoute] Processing request:', { startLocation, endLocation, transportMode });
-    
-    // Đánh dấu request hiện tại
-    pendingRequestRef.current = requestKey;
-    
-    try {
-      setLoading(true);
-      setError(null);
+    const processQueue = async () => {
+      console.log('[useRoute] Processing queue, length:', requestQueue.length);
       
-      console.log(`[useRoute] Finding route from ${JSON.stringify(startLocation)} to ${JSON.stringify(endLocation)}`);
+      // Lấy request mới nhất thay vì cũ nhất
+      const currentRequest = requestQueue[requestQueue.length - 1];
+      const remainingQueue = requestQueue.slice(0, -1);
       
-      const routeData = await findRoute(
-        startLocation.latitude,
-        startLocation.longitude,
-        endLocation.latitude,
-        endLocation.longitude,
-        transportMode
-      );
+      console.log('[useRoute] Processing request:', currentRequest);
       
-      if (routeData) {
-        console.log('[useRoute] Route found successfully');
-        setRoute(routeData);
+      try {
+        setLoading(true);
+        setError(null);
         
-        // Lấy chỉ đường chi tiết
-        console.log('[useRoute] Getting route instructions');
-        const routeInstructions = await getRouteInstructions(routeData);
-        setInstructions(routeInstructions);
+        const { startLocation, endLocation, transportMode, requestKey } = currentRequest;
         
-        retryCountRef.current = 0; // Reset retry counter on success
-      } else {
-        console.log('[useRoute] No route data returned');
-        throw new Error('Không tìm thấy đường đi');
+        // Lưu lại request key hiện tại
+        pendingRequestRef.current = requestKey;
+        
+        // Log thông tin tìm đường
+        console.log('[useRoute] Finding route from', startLocation, 'to', endLocation);
+        
+        // Tìm đường
+        const result = await findRoute(
+          startLocation.latitude,
+          startLocation.longitude,
+          endLocation.latitude,
+          endLocation.longitude,
+          transportMode
+        );
+        
+        // Lưu kết quả vào ref để có thể truy cập trong promise
+        routeResultRef.current = result;
+        
+        // Cập nhật kết quả nếu request key vẫn là hiện tại
+        if (pendingRequestRef.current === requestKey) {
+          console.log('[useRoute] Route found successfully');
+          setRoute(result);
+          
+          // Cập nhật trạng thái
+          console.log('[useRoute] Route state changed: Route available');
+        } else {
+          console.log('[useRoute] Request superseded, discarding result');
+        }
+      } catch (error) {
+        console.error('[useRoute] Error processing queue:', error);
+        setError(error.message);
+        console.log('[useRoute] Route state changed: Error');
+        
+        // Reset refs khi có lỗi
+        routeResultRef.current = null;
+      } finally {
+        setLoading(false);
+        
+        // Cập nhật hàng đợi - xóa tất cả vì chúng ta đã xử lý request mới nhất
+        setRequestQueue([]);
+        
+        // Dừng xử lý hàng đợi vì đã xử lý xong request mới nhất
+        console.log('[useRoute] Queue empty, stopping processing');
+        setIsProcessingQueue(false);
       }
-    } catch (err) {
-      console.error('[useRoute] Error finding route:', err);
-      
-      if (retryCountRef.current < MAX_RETRIES) {
-        // Thử lại nếu chưa đạt số lần tối đa
-        retryCountRef.current++;
-        console.log(`[useRoute] Retrying route request (${retryCountRef.current}/${MAX_RETRIES})...`);
-        
-        // Thêm lại vào đầu hàng đợi
-        requestQueueRef.current.unshift({
-          startLocation, 
-          endLocation, 
-          transportMode,
-          requestKey
-        });
-        
-        // Chờ một khoảng thời gian trước khi thử lại
-        setTimeout(() => {
-          console.log('[useRoute] Executing retry');
-          processQueue();
-        }, RETRY_DELAY);
-        
-        return;
-      }
-      
-      console.log('[useRoute] Max retries reached, setting error');
-      setError('Không thể tìm đường đi. Vui lòng kiểm tra kết nối mạng và thử lại sau.');
-      setRoute(null);
-      setInstructions([]);
-    } finally {
-      setLoading(false);
-      
-      // Xử lý yêu cầu tiếp theo trong hàng đợi
-      setTimeout(() => {
-        console.log('[useRoute] Processing next request in queue');
-        processQueue();
-      }, 500);
-    }
-  }, []);
-
+    };
+    
+    processQueue();
+  }, [requestQueue, loading, isProcessingQueue]);
+  
   /**
    * Xóa tuyến đường hiện tại
    */
   const clearRoute = useCallback(() => {
-    console.log('[useRoute] Clearing route');
+    console.log('[useRoute] Clearing route and refs');
     setRoute(null);
-    setInstructions([]);
     setError(null);
     
-    // Xóa tất cả các yêu cầu đang chờ
-    requestQueueRef.current = [];
     pendingRequestRef.current = null;
-    retryCountRef.current = 0;
-    lastRequestParamsRef.current = null;
+    routeResultRef.current = null;
+    
+    // Xóa timeout nếu có
+    if (timeoutIdRef.current) {
+      clearTimeout(timeoutIdRef.current);
+      timeoutIdRef.current = null;
+    }
   }, []);
-
-  // Log khi route thay đổi
+  
+  /**
+   * Lấy hướng dẫn chỉ đường chi tiết
+   * @param {Object} routeData - Thông tin tuyến đường
+   * @returns {Promise<Array>} Danh sách hướng dẫn chỉ đường
+   */
+  const getInstructions = useCallback(async (routeData) => {
+    try {
+      console.log('[useRoute] Getting route instructions');
+      return await getRouteInstructions(routeData);
+    } catch (error) {
+      console.error('[useRoute] Error getting instructions:', error);
+      return [];
+    }
+  }, []);
+  
+  // Cleanup khi component unmount
   useEffect(() => {
-    console.log('[useRoute] Route state changed:', route ? 'Route available' : 'No route');
-  }, [route]);
-
+    return () => {
+      console.log('[useRoute] Cleanup on unmount');
+      // Xóa timeout khi unmount
+      if (timeoutIdRef.current) {
+        clearTimeout(timeoutIdRef.current);
+      }
+    };
+  }, []);
+  
   return {
     route,
-    instructions,
     loading,
     error,
     getRoute,
-    clearRoute
+    clearRoute,
+    getInstructions
   };
 };
 
