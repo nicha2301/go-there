@@ -233,7 +233,7 @@ const BottomSheetHeader = React.memo(({
       
       {/* Transport modes */}
       {showDirectionsUI && (
-        <View className="flex-row justify-around py-3">
+        <View className="flex-row justify-around py-">
           {TRANSPORT_MODES.map(mode => (
             <TouchableOpacity
               key={mode.id}
@@ -726,7 +726,7 @@ const MapScreen = () => {
     
     Animated.spring(bottomSheetAnimation, {
       toValue,
-      friction: 8,
+      friction: 10,
       useNativeDriver: false
     }).start();
     
@@ -1234,7 +1234,7 @@ const MapScreen = () => {
                 ListHeaderComponent={
                   searchQuery.length < 2 ? (
                     <View 
-                      className="px-4 py-4"
+                      className="px-4 py-4 mt-4"
                       style={{ backgroundColor: currentTheme.colors.backgroundHighlight }}
                     >
                       <Text 

@@ -144,7 +144,7 @@ export default function SearchScreen() {
     if (searchMode === 'origin') {
       // Quay lại màn hình map với điểm xuất phát đã chọn
       router.push({
-        pathname: "/",
+        pathname: "/map",
         params: { 
           startPlace: JSON.stringify(place),
           from: 'search'
@@ -153,7 +153,7 @@ export default function SearchScreen() {
     } else if (searchMode === 'destination') {
       // Quay lại màn hình map với điểm đến đã chọn
       router.push({
-        pathname: "/",
+        pathname: "/map",
         params: { 
           place: JSON.stringify(place),
           from: 'search'
@@ -162,7 +162,7 @@ export default function SearchScreen() {
     } else {
       // Chế độ tìm kiếm thông thường
       router.push({
-        pathname: "/" as any,
+        pathname: "/map",
         params: { 
           place: JSON.stringify(place),
           from: 'search'
