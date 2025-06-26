@@ -2,15 +2,15 @@ import { FontAwesome5, Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
-  Animated,
-  Dimensions,
-  FlatList,
-  StatusBar,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View
+    ActivityIndicator,
+    Animated,
+    Dimensions,
+    FlatList,
+    StatusBar,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View
 } from 'react-native';
 import { GestureHandlerRootView, PanGestureHandler } from 'react-native-gesture-handler';
 import MapView, { Marker, Polyline, PROVIDER_DEFAULT } from 'react-native-maps';
@@ -290,15 +290,16 @@ export default function RouteDirections() {
   const navigation = useNavigation();
   const router = useRouter();
   const params = useLocalSearchParams();
-  const mapRef = useRef<MapView | null>(null);
+  const mapRef = useRef<MapView>(null);
   
-  // Khởi tạo các refs để theo dõi trạng thái
+  // Refs
   const paramsProcessedRef = useRef(false);
-  const routeRequestedRef = useRef(false);
-  const lastTransportModeRef = useRef('');
+  const routeRequestedRef = useRef<boolean>(false);
+  const lastTransportModeRef = useRef<string>('driving');
   const bottomSheetAnimation = useRef(new Animated.Value(BOTTOM_SHEET_MIN_HEIGHT)).current;
   const panY = useRef(new Animated.Value(0)).current;
   
+  // State
   const [startLocation, setStartLocation] = useState<Coordinates | null>(null);
   const [endLocation, setEndLocation] = useState<Coordinates | null>(null);
   const [startPlaceName, setStartPlaceName] = useState<string>('');
@@ -310,93 +311,60 @@ export default function RouteDirections() {
   const [routeError, setRouteError] = useState<string | null>(null);
   const [isBottomSheetExpanded, setIsBottomSheetExpanded] = useState<boolean>(false);
   const [mapPadding, setMapPadding] = useState<{ bottom: number }>({ bottom: BOTTOM_SHEET_MIN_HEIGHT });
+  const [isMapReady, setIsMapReady] = useState<boolean>(false);
   
   // Lấy vị trí hiện tại từ hook
-  const { location: currentLocation, address: currentAddress } = useLocation() as LocationHook;
+  const { 
+    location: currentLocation, 
+    address: currentAddress, 
+    loading: locationLoading 
+  } = useLocation();
   
-  // Lấy hàm tìm đường từ hook
-  const { getRoute, loading: routeLoading, error: routeApiError, route: apiRoute } = useRoute() as RouteHook;
+  // Lấy hook tìm đường
+  const { 
+    route: apiRoute, 
+    loading: routeLoading, 
+    error: routeApiError, 
+    getRoute 
+  } = useRoute();
 
-  // Xử lý params từ màn hình trước
+  // Khởi tạo dữ liệu từ params
   useEffect(() => {
-    console.log('[RouteDirections] Processing params:', params);
+    console.log('[RouteDirections] Initializing with params:', params);
     
-    if (params && !paramsProcessedRef.current) {
-      // Đánh dấu đã xử lý params để không lặp lại
-      paramsProcessedRef.current = true;
-      
-      try {
-        // Xử lý thông tin điểm bắt đầu
-        if (params.startLocation) {
-          const parsedStartLocation = typeof params.startLocation === 'string'
-            ? JSON.parse(params.startLocation)
-            : params.startLocation;
-          
-          console.log('[RouteDirections] Setting start location:', parsedStartLocation);
-          setStartLocation(parsedStartLocation);
-        }
-        
-        // Xử lý thông tin điểm kết thúc
-        if (params.endLocation) {
-          const parsedEndLocation = typeof params.endLocation === 'string'
-            ? JSON.parse(params.endLocation)
-            : params.endLocation;
-          
-          console.log('[RouteDirections] Setting end location:', parsedEndLocation);
-          setEndLocation(parsedEndLocation);
-        }
-        
-        // Xử lý tên địa điểm
-        if (params.startPlaceName) {
-          setStartPlaceName(params.startPlaceName.toString());
-        } else if (currentAddress) {
-          setStartPlaceName('Vị trí hiện tại');
-        }
-        
-        if (params.endPlaceName) {
-          setEndPlaceName(params.endPlaceName.toString());
-        }
-        
-        // Xử lý đối tượng place
-        if (params.place) {
-          try {
-            const parsedPlace = typeof params.place === 'string'
-              ? JSON.parse(params.place)
-              : params.place;
-            
-            setPlace(parsedPlace);
-            
-            // Cập nhật endLocation từ place nếu chưa có
-            if (!params.endLocation && parsedPlace.latitude && parsedPlace.longitude) {
-              setEndLocation({
-                latitude: parsedPlace.latitude,
-                longitude: parsedPlace.longitude
-              });
-            }
-            
-            // Cập nhật endPlaceName từ place nếu chưa có
-            if (!params.endPlaceName && parsedPlace.name) {
-              setEndPlaceName(parsedPlace.name);
-            }
-          } catch (error) {
-            console.error('[RouteDirections] Error parsing place:', error);
-          }
-        }
-        
-        // Thiết lập vị trí hiện tại làm điểm xuất phát nếu không có startLocation
-        if (!params.startLocation && currentLocation) {
-          console.log('[RouteDirections] Using current location as start:', currentLocation);
-          setStartLocation(currentLocation);
-          setStartPlaceName('Vị trí hiện tại');
-        }
-        
-        // Thiết lập phương tiện di chuyển nếu có
-        if (params.transportMode) {
-          setTransportMode(params.transportMode.toString());
-        }
-      } catch (error) {
-        console.error('[RouteDirections] Error processing params:', error);
-      }
+    // Xử lý tham số vị trí bắt đầu
+    if (params.startLat && params.startLng) {
+      const startLoc = {
+        latitude: parseFloat(params.startLat as string),
+        longitude: parseFloat(params.startLng as string)
+      };
+      setStartLocation(startLoc);
+      setStartPlaceName(params.startName as string || 'Điểm xuất phát');
+      console.log('[RouteDirections] Set start location from params:', startLoc);
+    } else if (currentLocation) {
+      // Sử dụng vị trí hiện tại nếu không có tham số
+      setStartLocation(currentLocation);
+      setStartPlaceName(currentAddress || 'Vị trí hiện tại');
+      console.log('[RouteDirections] Set start location from current location:', currentLocation);
+    }
+    
+    // Xử lý tham số vị trí kết thúc
+    if (params.endLat && params.endLng) {
+      const endLoc = {
+        latitude: parseFloat(params.endLat as string),
+        longitude: parseFloat(params.endLng as string)
+      };
+      setEndLocation(endLoc);
+      setEndPlaceName(params.endName as string || 'Điểm đến');
+      console.log('[RouteDirections] Set end location from params:', endLoc);
+    }
+    
+    // Xử lý tham số phương tiện
+    if (params.mode) {
+      const mode = params.mode as string;
+      setTransportMode(mode);
+      lastTransportModeRef.current = mode;
+      console.log('[RouteDirections] Set transport mode from params:', mode);
     }
   }, [params, currentLocation, currentAddress]);
 
@@ -487,6 +455,9 @@ export default function RouteDirections() {
         setLoading(true);
         setRouteError(null);
         
+        // Thêm delay nhỏ để đảm bảo UI được cập nhật trước khi gọi API
+        await new Promise(resolve => setTimeout(resolve, 300));
+        
         // Gọi tìm đường
         console.log('[RouteDirections] Finding route between', startLocation, endLocation);
         console.log('[RouteDirections] Finding route between points with mode:', transportMode);
@@ -530,7 +501,7 @@ export default function RouteDirections() {
     };
     
     findRouteNow();
-  }, [startLocation, endLocation, transportMode]);
+  }, [startLocation, endLocation, transportMode, getRoute, mapPadding.bottom]);
   
   // Xử lý khi thay đổi phương tiện
   useEffect(() => {
@@ -554,6 +525,9 @@ export default function RouteDirections() {
       const findNewRoute = async () => {
         try {
           setLoading(true);
+          
+          // Thêm delay nhỏ để đảm bảo UI được cập nhật trước khi gọi API
+          await new Promise(resolve => setTimeout(resolve, 300));
           
           console.log('[RouteDirections] Finding route with new transport mode:', transportMode);
           const newRouteData = await getRoute(startLocation, endLocation, transportMode);
@@ -613,19 +587,27 @@ export default function RouteDirections() {
   // Xử lý khi bản đồ sẵn sàng
   const handleMapReady = useCallback(() => {
     console.log('[RouteDirections] Map is ready');
+    setIsMapReady(true);
+    
     // Zoom đến lộ trình nếu đã có
     if (mapRef.current && startLocation && endLocation) {
       console.log('[RouteDirections] Zooming to route on map ready');
-      mapRef.current.fitToCoordinates(
-        [
-          { latitude: startLocation.latitude, longitude: startLocation.longitude },
-          { latitude: endLocation.latitude, longitude: endLocation.longitude }
-        ],
-        {
-          edgePadding: { top: 70, right: 70, bottom: mapPadding.bottom + 70, left: 70 },
-          animated: true
+      setTimeout(() => {
+        try {
+          mapRef.current?.fitToCoordinates(
+            [
+              { latitude: startLocation.latitude, longitude: startLocation.longitude },
+              { latitude: endLocation.latitude, longitude: endLocation.longitude }
+            ],
+            {
+              edgePadding: { top: 70, right: 70, bottom: mapPadding.bottom + 70, left: 70 },
+              animated: true
+            }
+          );
+        } catch (error) {
+          console.error('[RouteDirections] Error zooming map:', error);
         }
-      );
+      }, 1000);
     }
   }, [startLocation, endLocation, mapPadding.bottom]);
 
@@ -717,32 +699,35 @@ export default function RouteDirections() {
     }
   };
   
-  // Lấy icon cho maneuver
-  const getManeuverIcon = useCallback((maneuver: Maneuver | undefined) => {
-    if (!maneuver) return MANEUVER_ICONS.default;
-    
-    let key = 'default';
-    if (maneuver.type && MANEUVER_ICONS[maneuver.type]) {
-      key = maneuver.type;
-    } else if (maneuver.type === 'turn') {
-      if (maneuver.modifier === 'right') {
-        key = 'turn-right';
-      } else if (maneuver.modifier === 'left') {
-        key = 'turn-left';
-      } else if (maneuver.modifier === 'slight right') {
-        key = 'turn-slight-right';
-      } else if (maneuver.modifier === 'slight left') {
-        key = 'turn-slight-left';
-      } else if (maneuver.modifier === 'sharp right') {
-        key = 'turn-sharp-right';
-      } else if (maneuver.modifier === 'sharp left') {
-        key = 'turn-sharp-left';
-      } else if (maneuver.modifier === 'uturn') {
-        key = maneuver.driving_side === 'left' ? 'uturn-left' : 'uturn-right';
-      }
+  // Lấy tất cả các bước từ route
+  const getAllSteps = useCallback((routeData: RouteData) => {
+    if (!routeData || !routeData.legs) {
+      return [];
     }
     
-    return MANEUVER_ICONS[key] || MANEUVER_ICONS.default;
+    let allSteps: RouteStep[] = [];
+    routeData.legs.forEach(leg => {
+      if (leg.steps && leg.steps.length > 0) {
+        allSteps = [...allSteps, ...leg.steps];
+      }
+    });
+    
+    return allSteps;
+  }, []);
+
+  // Lấy icon cho maneuver
+  const getManeuverIcon = useCallback((maneuver?: Maneuver) => {
+    if (!maneuver) return MANEUVER_ICONS.default;
+    
+    if (maneuver.type && MANEUVER_ICONS[maneuver.type]) {
+      return MANEUVER_ICONS[maneuver.type];
+    }
+    
+    if (maneuver.modifier && MANEUVER_ICONS[`${maneuver.type}-${maneuver.modifier}`]) {
+      return MANEUVER_ICONS[`${maneuver.type}-${maneuver.modifier}`];
+    }
+    
+    return MANEUVER_ICONS.default;
   }, []);
   
   // Tạo text hướng dẫn từ maneuver
@@ -772,6 +757,78 @@ export default function RouteDirections() {
     router.back();
   };
 
+  // Nút thử lại khi có lỗi
+  const handleRetryRoute = useCallback(() => {
+    console.log('[RouteDirections] Retrying route');
+    
+    // Reset trạng thái
+    setRouteError(null);
+    routeRequestedRef.current = false;
+    
+    // Tìm đường lại
+    if (startLocation && endLocation) {
+      const findRouteAgain = async () => {
+        try {
+          setLoading(true);
+          
+          // Thêm delay nhỏ để đảm bảo UI được cập nhật trước khi gọi API
+          await new Promise(resolve => setTimeout(resolve, 300));
+          
+          console.log('[RouteDirections] Retrying route between', startLocation, endLocation);
+          const routeData = await getRoute(startLocation, endLocation, transportMode);
+          
+          if (routeData) {
+            console.log('[RouteDirections] Route found successfully on retry');
+            setRoute(routeData);
+            
+            // Zoom đến khu vực hiển thị đường đi
+            setTimeout(() => {
+              if (mapRef.current) {
+                mapRef.current.fitToCoordinates(
+                  [
+                    { latitude: startLocation.latitude, longitude: startLocation.longitude },
+                    { latitude: endLocation.latitude, longitude: endLocation.longitude }
+                  ],
+                  {
+                    edgePadding: { top: 70, right: 70, bottom: mapPadding.bottom + 70, left: 70 },
+                    animated: true
+                  }
+                );
+              }
+            }, 500);
+          } else {
+            console.log('[RouteDirections] No route data returned on retry');
+            setRouteError('Không thể tìm thấy đường đi. Vui lòng thử lại sau.');
+          }
+        } catch (error) {
+          console.error('[RouteDirections] Error finding route on retry:', error);
+          setRouteError(error instanceof Error ? error.message : 'Không thể tìm đường. Vui lòng thử lại sau.');
+        } finally {
+          setLoading(false);
+        }
+      };
+      
+      findRouteAgain();
+    }
+  }, [startLocation, endLocation, transportMode, getRoute, mapPadding.bottom]);
+
+  // Hiển thị lỗi
+  const renderError = () => {
+    if (!routeError) return null;
+    
+    return (
+      <View className="px-4 py-3 bg-red-50 border-l-4 border-red-500 mb-2 mx-4">
+        <Text className="text-red-700">{routeError}</Text>
+        <TouchableOpacity 
+          className="mt-2 bg-primary py-2 px-4 rounded-md self-end"
+          onPress={handleRetryRoute}
+        >
+          <Text className="text-white font-medium">Thử lại</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
   // Cleanup function
   useEffect(() => {
     return () => {
@@ -781,68 +838,104 @@ export default function RouteDirections() {
   }, []);
 
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <View className="flex-1 bg-background">
-        <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
-        
-        {/* Nút quay lại */}
-        <View className="absolute top-0 left-0 right-0 z-10" style={{ paddingTop: insets.top }}>
-          <TouchableOpacity 
-            className="bg-white m-4 p-2 rounded-full shadow-md"
-            onPress={handleBackPress}
+    <View className="flex-1 bg-background">
+      <StatusBar style="auto" />
+      
+      {/* Map */}
+      <MapView
+        ref={mapRef}
+        style={StyleSheet.absoluteFillObject}
+        provider={PROVIDER_DEFAULT}
+        initialRegion={{
+          latitude: startLocation?.latitude || 10.762622,
+          longitude: startLocation?.longitude || 106.660172,
+          latitudeDelta: 0.01,
+          longitudeDelta: 0.01
+        }}
+        showsUserLocation={true}
+        showsMyLocationButton={false}
+        showsCompass={false}
+        showsScale={true}
+        showsTraffic={false}
+        rotateEnabled={true}
+        scrollEnabled={true}
+        zoomEnabled={true}
+        toolbarEnabled={false}
+        loadingEnabled={true}
+        moveOnMarkerPress={false}
+        onMapReady={handleMapReady}
+        onLayout={() => console.log('[RouteDirections] Map layout changed')}
+        paddingAdjustmentBehavior="automatic"
+      >
+        {startLocation && (
+          <Marker
+            coordinate={{
+              latitude: startLocation.latitude,
+              longitude: startLocation.longitude
+            }}
+            title={startPlaceName || "Điểm bắt đầu"}
           >
-            <Ionicons name="arrow-back" size={24} color={theme.colors.text} />
-          </TouchableOpacity>
-        </View>
+            <View className="bg-primary p-2 rounded-full">
+              <FontAwesome5 name="map-marker-alt" size={16} color="white" />
+            </View>
+          </Marker>
+        )}
         
-        {/* Bản đồ */}
-        <MapView
-          ref={mapRef}
-          style={{ flex: 1 }}
-          provider={PROVIDER_DEFAULT}
-          initialRegion={{
-            latitude: startLocation?.latitude || 10.762622,
-            longitude: startLocation?.longitude || 106.660172,
-            latitudeDelta: 0.05,
-            longitudeDelta: 0.05
-          }}
-          showsUserLocation={true}
-          toolbarEnabled={false}
-          showsCompass={true}
-          zoomEnabled={true}
-          scrollEnabled={true}
-          rotateEnabled={true}
-          onMapReady={handleMapReady}
-          showsMyLocationButton={false}
-        >
-          {getEndpoints}
-          {getRoutePolyline}
-        </MapView>
+        {endLocation && (
+          <Marker
+            coordinate={{
+              latitude: endLocation.latitude,
+              longitude: endLocation.longitude
+            }}
+            title={endPlaceName || "Điểm đến"}
+          >
+            <View className="bg-red-500 p-2 rounded-full">
+              <FontAwesome5 name="flag-checkered" size={16} color="white" />
+            </View>
+          </Marker>
+        )}
         
-        {/* Nút zoom */}
-        <MapControls onZoomIn={handleZoomIn} onZoomOut={handleZoomOut} />
-        
-        {/* Bottom Sheet có PanGestureHandler để kéo thả */}
+        {/* Hiển thị đường đi */}
+        {route && route.geometry && route.geometry.coordinates && route.geometry.coordinates.length > 0 && (
+          <Polyline
+            coordinates={route.geometry.coordinates.map(coord => ({
+              latitude: coord[1],
+              longitude: coord[0]
+            }))}
+            strokeWidth={5}
+            strokeColor={theme.colors.primary}
+            lineCap="round"
+            lineJoin="round"
+          />
+        )}
+      </MapView>
+      
+      {/* Nút quay lại */}
+      <TouchableOpacity 
+        className="absolute top-12 left-4 bg-white p-2 rounded-full shadow-md"
+        onPress={handleBackPress}
+      >
+        <Ionicons name="arrow-back" size={24} color={theme.colors.text} />
+      </TouchableOpacity>
+      
+      {/* Nút điều khiển bản đồ */}
+      <MapControls onZoomIn={handleZoomIn} onZoomOut={handleZoomOut} />
+      
+      {/* Bottom Sheet */}
+      <GestureHandlerRootView style={{ flex: 1 }}>
         <PanGestureHandler
           onGestureEvent={handleGesture}
           onHandlerStateChange={handleGestureStateChange}
-          activeOffsetY={[-20, 20]}
-          failOffsetY={[-100, 100]}
         >
-          <Animated.View 
-            className="absolute left-0 right-0 bottom-0 bg-white rounded-t-3xl shadow-lg"
-            style={[
-              styles.bottomSheet,
-              {
-                height: bottomSheetAnimation,
-                paddingBottom: insets.bottom,
-                transform: [{ translateY: panY }]
-              }
-            ]}
+          <Animated.View
+            className="absolute bottom-0 left-0 right-0 bg-white rounded-t-3xl shadow-lg"
+            style={{
+              height: bottomSheetAnimation,
+              transform: [{ translateY: panY }]
+            }}
           >
-            {/* Header với thông tin tóm tắt và nút điều khiển */}
-            <BottomSheetHeader
-              route={route}
+            <BottomSheetHeader 
+              route={route} 
               isExpanded={isBottomSheetExpanded}
               onToggleExpand={toggleBottomSheet}
               transportMode={transportMode}
@@ -852,58 +945,42 @@ export default function RouteDirections() {
             />
             
             {/* Hiển thị lỗi */}
-            {routeError && (
-              <View className="mx-4 mb-3 p-3 bg-errorLight rounded-xl">
-                <Text className="text-error">{routeError}</Text>
+            {renderError()}
+            
+            {/* Hiển thị loading */}
+            {loading && (
+              <View className="px-4 py-8 items-center">
+                <ActivityIndicator size="large" color={theme.colors.primary} />
+                <Text className="text-textSecondary mt-2">Đang tìm đường...</Text>
               </View>
             )}
             
-            {/* Phần chỉ dẫn chi tiết */}
-            <View className="flex-1 px-4 pb-2">
-              <Text className="text-base font-bold text-text mb-2">Chi tiết lộ trình</Text>
-              
-              {loading ? (
-                <View className="flex-1 justify-center items-center">
-                  <ActivityIndicator size="small" color={theme.colors.primary} />
-                  <Text className="mt-2 text-textSecondary">Đang tìm đường...</Text>
-                </View>
-              ) : (
-                <>
-                  {route && route.legs && Array.isArray(route.legs) && route.legs.length > 0 && route.legs[0] && route.legs[0].steps ? (
-                    <FlatList
-                      data={route.legs[0].steps}
-                      renderItem={({ item, index }) => (
-                        <DirectionStep
-                          step={item}
-                          index={index}
-                          isLastStep={index === (route.legs && route.legs[0] && route.legs[0].steps ? route.legs[0].steps.length - 1 : false)}
-                          getManeuverIcon={getManeuverIcon}
-                          getInstructionText={getInstructionText}
-                        />
-                      )}
-                      keyExtractor={(item, index) => `step-${index}`}
-                      showsVerticalScrollIndicator={true}
-                      nestedScrollEnabled={true}
-                      onTouchStart={(e) => {
-                        // Ngăn sự kiện chạm lan tỏa lên PanGestureHandler khi người dùng scroll trong FlatList
-                        e.stopPropagation();
-                      }}
-                    />
-                  ) : (
-                    <View className="flex-1 justify-center items-center">
-                      <Ionicons name="information-circle-outline" size={36} color={theme.colors.grey} />
-                      <Text className="mt-2 text-textSecondary text-center">
-                        {routeError || 'Hướng dẫn chi tiết sẽ hiển thị ở đây khi tìm thấy đường đi.'}
-                      </Text>
-                    </View>
-                  )}
-                </>
-              )}
-            </View>
+            {/* Danh sách các bước */}
+            {route && route.legs && !loading && (
+              <FlatList
+                data={getAllSteps(route)}
+                keyExtractor={(item, index) => `step-${index}`}
+                contentContainerStyle={{ padding: 16 }}
+                renderItem={({ item, index }) => (
+                  <DirectionStep 
+                    step={item} 
+                    index={index}
+                    isLastStep={index === getAllSteps(route).length - 1}
+                    getManeuverIcon={getManeuverIcon}
+                    getInstructionText={getInstructionText}
+                  />
+                )}
+                ListEmptyComponent={
+                  <Text className="text-center py-4 text-textSecondary">
+                    Không có thông tin chỉ đường chi tiết
+                  </Text>
+                }
+              />
+            )}
           </Animated.View>
         </PanGestureHandler>
-      </View>
-    </GestureHandlerRootView>
+      </GestureHandlerRootView>
+    </View>
   );
 }
 

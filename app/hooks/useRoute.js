@@ -14,6 +14,7 @@ const useRoute = () => {
   const pendingRequestRef = useRef(null);
   const routeResultRef = useRef(null);
   const timeoutIdRef = useRef(null);
+  const activeRequestRef = useRef(false);
   
   // Hàng đợi cho các yêu cầu tìm đường
   const [requestQueue, setRequestQueue] = useState([]);
@@ -92,12 +93,12 @@ const useRoute = () => {
         clearTimeout(timeoutIdRef.current);
       }
       
-      // Thiết lập timeout ngắn hơn để tránh đợi quá lâu
+      // Thiết lập timeout dài hơn cho APK build
       const timeoutPromise = new Promise((_, reject) => {
         timeoutIdRef.current = setTimeout(() => {
-          console.log('[useRoute] Request timeout after 8s');
+          console.log('[useRoute] Request timeout after 15s');
           reject(new Error('Thời gian tìm đường quá lâu'));
-        }, 8000);
+        }, 15000); // Tăng từ 8s lên 15s
       });
       
       // Trả về Promise đợi kết quả hoặc timeout
@@ -125,10 +126,10 @@ const useRoute = () => {
               }
             }, 200); // Kiểm tra mỗi 200ms
             
-            // Sau 10s nếu vẫn chưa tìm thấy route, clear interval
+            // Sau 20s nếu vẫn chưa tìm thấy route, clear interval
             setTimeout(() => {
               clearInterval(checkInterval);
-            }, 10000);
+            }, 20000); // Tăng từ 10s lên 20s
           }),
           // Promise timeout
           timeoutPromise
@@ -152,12 +153,15 @@ const useRoute = () => {
    */
   useEffect(() => {
     // Nếu không có request nào trong hàng đợi hoặc đang xử lý request khác, không làm gì
-    if (requestQueue.length === 0 || loading || !isProcessingQueue) {
+    if (requestQueue.length === 0 || loading || !isProcessingQueue || activeRequestRef.current) {
       return;
     }
     
     const processQueue = async () => {
       console.log('[useRoute] Processing queue, length:', requestQueue.length);
+      
+      // Đánh dấu đang xử lý request
+      activeRequestRef.current = true;
       
       // Lấy request mới nhất thay vì cũ nhất
       const currentRequest = requestQueue[requestQueue.length - 1];
@@ -215,6 +219,9 @@ const useRoute = () => {
         // Dừng xử lý hàng đợi vì đã xử lý xong request mới nhất
         console.log('[useRoute] Queue empty, stopping processing');
         setIsProcessingQueue(false);
+        
+        // Đánh dấu đã xử lý xong request
+        activeRequestRef.current = false;
       }
     };
     

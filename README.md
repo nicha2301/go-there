@@ -45,20 +45,16 @@
 ## 📸 Ảnh chụp màn hình
 
 <div align="center">
-  <table>
-    <tr>
-      <td><img src="screenshots/0ab911e4dd006a5e33118.jpg" alt="Chế độ sáng" width="200" /></td>
-      <td><img src="screenshots/5b738fba405ef700ae4f1.jpg" alt="Chế độ tối" width="200" /></td>
-      <td><img src="screenshots/116dd98d1669a137f8783.jpg" alt="Tìm kiếm" width="200" /></td>
-      <td><img src="screenshots/400c555699b22eec77a37.jpg" alt="Điều hướng" width="200" /></td>
-      <td><img src="screenshots/5b738fba405ef700ae4f1.jpg" alt="Chế độ sáng" width="200" /></td>
-      <td><img src="screenshots/6589bae8760cc152981d9.jpg" alt="Chế độ tối" width="200" /></td>
-      <td><img src="screenshots/b1f0fb2134c5839bdad42.jpg" alt="Tìm kiếm" width="200" /></td>
-      <td><img src="screenshots/b4b6954b5aafedf1b4be4.jpg" alt="Điều hướng" width="200" /></td>
-      <td><img src="screenshots/cd2ec698097cbe22e76d5.jpg" alt="Chế độ sáng" width="200" /></td>
-      <td><img src="screenshots/d6d1f5a339478e19d75610.jpg" alt="Chế độ tối" width="200" /></td>
-    </tr>
-  </table>
+    <img src="screenshots/0ab911e4dd006a5e33118.jpg" alt="Chế độ sáng" width="300" />
+    <img src="screenshots/5b738fba405ef700ae4f1.jpg" alt="Chế độ tối" width="300" />
+    <img src="screenshots/116dd98d1669a137f8783.jpg" alt="Tìm kiếm" width="300" />
+    <img src="screenshots/400c555699b22eec77a37.jpg" alt="Điều hướng" width="300" />
+    <img src="screenshots/5b738fba405ef700ae4f1.jpg" alt="Chế độ sáng" width="300" />
+    <img src="screenshots/6589bae8760cc152981d9.jpg" alt="Chế độ tối" width="300" />
+    <img src="screenshots/b1f0fb2134c5839bdad42.jpg" alt="Tìm kiếm" width="300" />
+    <img src="screenshots/b4b6954b5aafedf1b4be4.jpg" alt="Điều hướng" width="300" />
+    <img src="screenshots/cd2ec698097cbe22e76d5.jpg" alt="Chế độ sáng" width="300" />
+    <img src="screenshots/d6d1f5a339478e19d75610.jpg" alt="Chế độ tối" width="300" />
 </div>
 
 ## 🚀 Trải nghiệm ứng dụng
@@ -67,12 +63,12 @@
 
 Bạn có thể tải và cài đặt ứng dụng Go There trực tiếp thông qua link sau:
 
-[Tải Go There cho Android](https://expo.dev/accounts/nicha23/projects/go-there/builds/0bad3b10-aa32-47db-a2c5-dee3316199df)
+[Tải Go There cho Android](https://expo.dev/accounts/nicha23/projects/go-there/builds/367c5cb6-e1a3-4b26-ab12-702160cc039f)
 
 Hoặc quét mã QR bên dưới:
 
 <div align="center">
-  <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=https://expo.dev/accounts/nicha23/projects/go-there/builds/0bad3b10-aa32-47db-a2c5-dee3316199df" alt="QR Code" width="200" />
+  <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=https://expo.dev/accounts/nicha23/projects/go-there/builds/367c5cb6-e1a3-4b26-ab12-702160cc039f" alt="QR Code" width="200" />
 </div>
 
 ## 🛠️ Công nghệ sử dụng

@@ -1,3 +1,5 @@
+import * as Network from 'expo-network';
+
 // Service để tìm đường đi với OSRM API
 
 
@@ -18,10 +20,33 @@ const NOMINATIM_API = 'https://nominatim.openstreetmap.org';
 // Cấu hình retry
 const MAX_RETRIES = 3;
 const RETRY_DELAY = 800; // 800 ms
-const REQUEST_TIMEOUT = 5000; // 5 giây thay vì 10 giây
+const REQUEST_TIMEOUT = 8000; // Tăng từ 5s lên 8s
 
 // Biến để theo dõi API hiện tại đang sử dụng
 let currentApiIndex = 0;
+
+// Cache cho kết quả tìm đường
+const routeCache = new Map();
+const CACHE_EXPIRY = 30 * 60 * 1000; // 30 phút
+
+/**
+ * Tạo cache key từ các tham số tìm đường
+ * @param {number} startLat - Vĩ độ điểm bắt đầu
+ * @param {number} startLng - Kinh độ điểm bắt đầu
+ * @param {number} endLat - Vĩ độ điểm kết thúc
+ * @param {number} endLng - Kinh độ điểm kết thúc
+ * @param {string} mode - Phương tiện di chuyển
+ * @returns {string} Cache key
+ */
+const createCacheKey = (startLat, startLng, endLat, endLng, mode) => {
+  // Làm tròn tọa độ để tăng khả năng trùng cache
+  const roundedStartLat = Math.round(startLat * 10000) / 10000;
+  const roundedStartLng = Math.round(startLng * 10000) / 10000;
+  const roundedEndLat = Math.round(endLat * 10000) / 10000;
+  const roundedEndLng = Math.round(endLng * 10000) / 10000;
+  
+  return `${roundedStartLat},${roundedStartLng}-${roundedEndLat},${roundedEndLng}-${mode}`;
+};
 
 /**
  * Hàm tiện ích để chờ một khoảng thời gian
@@ -41,7 +66,10 @@ const fetchWithRetry = async (url, options = {}, retries = MAX_RETRIES) => {
   try {
     // Thêm AbortController để có thể hủy request nếu quá thời gian
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), options.timeout || REQUEST_TIMEOUT);
+    const timeoutId = setTimeout(() => {
+      console.log(`[routeService] Request timeout after ${options.timeout || REQUEST_TIMEOUT}ms: ${url}`);
+      controller.abort();
+    }, options.timeout || REQUEST_TIMEOUT);
     
     const enhancedOptions = {
       ...options,
@@ -72,11 +100,14 @@ const fetchWithRetry = async (url, options = {}, retries = MAX_RETRIES) => {
     }
   } catch (error) {
     if (retries <= 0) {
+      console.log(`[routeService] All retries failed for: ${url}`);
       throw error;
     }
     
-    console.log(`[routeService] Retry fetch (${MAX_RETRIES - retries + 1}/${MAX_RETRIES}): ${url}`);
-    await delay(RETRY_DELAY);
+    // Tăng thời gian chờ theo cấp số nhân cho mỗi lần retry
+    const backoffDelay = RETRY_DELAY * (MAX_RETRIES - retries + 1);
+    console.log(`[routeService] Retry fetch (${MAX_RETRIES - retries + 1}/${MAX_RETRIES}): ${url}, waiting ${backoffDelay}ms`);
+    await delay(backoffDelay);
     return fetchWithRetry(url, options, retries - 1);
   }
 };
@@ -87,14 +118,34 @@ const fetchWithRetry = async (url, options = {}, retries = MAX_RETRIES) => {
  */
 export const checkNetworkConnection = async () => {
   try {
-    const response = await fetch('https://www.google.com', { 
-      method: 'HEAD',
-      timeout: 3000
-    });
-    return response.ok;
+    console.log('[routeService] Checking network connection');
+    
+    // Sử dụng expo-network để kiểm tra kết nối
+    const networkState = await Network.getNetworkStateAsync();
+    
+    // Log trạng thái mạng chi tiết
+    console.log('[routeService] Network state:', networkState);
+    
+    if (!networkState.isConnected || !networkState.isInternetReachable) {
+      console.log('[routeService] No network connection or internet not reachable');
+      return false;
+    }
+    
+    return true;
   } catch (error) {
-    console.log('Network connection check failed:', error);
-    return false;
+    console.log('[routeService] Error checking network connection:', error);
+    
+    // Fallback: thử ping Google nếu expo-network gặp lỗi
+    try {
+      const response = await fetch('https://www.google.com', { 
+        method: 'HEAD',
+        timeout: 3000
+      });
+      return response.ok;
+    } catch (fallbackError) {
+      console.log('[routeService] Fallback network check failed:', fallbackError);
+      return false;
+    }
   }
 };
 
@@ -114,6 +165,21 @@ export const findRoute = async (startLat, startLng, endLat, endLng, mode = 'driv
     // Kiểm tra tính hợp lệ của các tham số
     if (!startLat || !startLng || !endLat || !endLng) {
       throw new Error('Tọa độ không hợp lệ');
+    }
+    
+    // Tạo cache key và kiểm tra cache
+    const cacheKey = createCacheKey(startLat, startLng, endLat, endLng, mode);
+    
+    // Kiểm tra cache
+    if (routeCache.has(cacheKey)) {
+      const cachedData = routeCache.get(cacheKey);
+      if (cachedData && Date.now() - cachedData.timestamp < CACHE_EXPIRY) {
+        console.log(`[routeService] Using cached route data for ${cacheKey}`);
+        return cachedData.data;
+      } else {
+        // Xóa cache nếu đã hết hạn
+        routeCache.delete(cacheKey);
+      }
     }
     
     // Kiểm tra kết nối mạng trước khi gọi API
@@ -217,7 +283,7 @@ export const findRoute = async (startLat, startLng, endLat, endLng, mode = 'driv
         currentApiIndex = (currentApiIndex + i) % OSRM_API_URLS.length;
         
         // Định dạng kết quả
-        return {
+        const routeData = {
           distance: route.distance, // mét
           duration: route.duration, // giây
           formattedDistance: formatDistance(route.distance),
@@ -228,6 +294,14 @@ export const findRoute = async (startLat, startLng, endLat, endLng, mode = 'driv
           endPoint: { latitude: endLat, longitude: endLng },
           transportMode: mode
         };
+        
+        // Lưu vào cache
+        routeCache.set(cacheKey, {
+          data: routeData,
+          timestamp: Date.now()
+        });
+        
+        return routeData;
       } catch (error) {
         console.error(`[routeService] Error with API ${i+1}/${OSRM_API_URLS.length}:`, error);
         // Tiếp tục với API tiếp theo
@@ -236,6 +310,13 @@ export const findRoute = async (startLat, startLng, endLat, endLng, mode = 'driv
     
     // Nếu tất cả các API đều thất bại, sử dụng dữ liệu mẫu
     console.log('[routeService] All APIs failed, using mock data');
+    
+    // Lưu dữ liệu mẫu vào cache
+    routeCache.set(cacheKey, {
+      data: mockRoute,
+      timestamp: Date.now()
+    });
+    
     return mockRoute;
     
   } catch (error) {
@@ -248,6 +329,14 @@ export const findRoute = async (startLat, startLng, endLat, endLng, mode = 'driv
     
     throw new Error(`Không thể tìm đường đi: ${error.message}`);
   }
+};
+
+/**
+ * Xóa cache tìm đường
+ */
+export const clearRouteCache = () => {
+  console.log('[routeService] Clearing route cache');
+  routeCache.clear();
 };
 
 /**
@@ -392,7 +481,8 @@ const formatDuration = (durationInSeconds) => {
 // Để hỗ trợ các phiên bản cũ hơn
 const routeService = {
   findRoute,
-  getRouteInstructions
+  getRouteInstructions,
+  clearRouteCache
 };
 
 export default routeService; 
