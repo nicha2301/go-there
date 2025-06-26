@@ -321,29 +321,6 @@ const BottomSheetHeader = React.memo(({
         </View>
       )}
       
-      {/* Buttons */}
-      {showDirectionsUI && route && (
-        <View className="flex-row justify-between mt-1">
-          <TouchableOpacity
-            className="flex-1 mr-2 flex-row items-center justify-center py-3 rounded-xl"
-            style={{ backgroundColor: currentTheme.colors.primary }}
-          >
-            <Ionicons name="navigate" size={20} color="#FFF" />
-            <Text className="text-white font-bold ml-2">Bắt đầu</Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity
-            className="w-14 items-center justify-center rounded-xl"
-            style={{ 
-              backgroundColor: currentTheme.colors.card,
-              borderColor: currentTheme.colors.border,
-              borderWidth: 1
-            }}
-          >
-            <Ionicons name="share-social-outline" size={20} color={currentTheme.colors.text} />
-          </TouchableOpacity>
-        </View>
-      )}
     </View>
   );
 });
@@ -371,6 +348,11 @@ const MapScreen = () => {
   const [startPlaceName, setStartPlaceName] = useState<string>('');
   const [endPlaceName, setEndPlaceName] = useState<string>('');
   const [showDirectionsUI, setShowDirectionsUI] = useState(false);
+  
+  // Thêm state cho chế độ điều hướng tích cực
+  const [isNavigating, setIsNavigating] = useState(false);
+  const [currentStepIndex, setCurrentStepIndex] = useState(0);
+  const [distanceToNextStep, setDistanceToNextStep] = useState<number | null>(null);
   
   // Thêm state cho tìm kiếm trực tiếp
   const [searchQuery, setSearchQuery] = useState('');
@@ -550,13 +532,124 @@ const MapScreen = () => {
               }
             );
           }
-        }, 500);
+        }, 200);
+        
+        // Reset các giá trị điều hướng
+        setIsNavigating(false);
+        setCurrentStepIndex(0);
+        setDistanceToNextStep(null);
       }
     } catch (error) {
       console.error('Error finding route:', error);
-      setRouteError(error instanceof Error ? error.message : 'Không thể tìm đường. Vui lòng thử lại sau.');
+      setRouteError('Không thể tìm đường đi. Vui lòng thử lại sau.');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  // Hàm bắt đầu điều hướng
+  const startNavigation = () => {
+    if (!route || !location) return;
+    
+    setIsNavigating(true);
+    setCurrentStepIndex(0);
+    
+    // Zoom đến vị trí hiện tại và hướng theo lộ trình
+    if (mapRef.current) {
+      mapRef.current.animateCamera({
+        center: {
+          latitude: location.latitude,
+          longitude: location.longitude
+        },
+        pitch: 60,
+        heading: location.heading || 0,
+        zoom: 18,
+        altitude: 1000
+      }, { duration: 1000 });
+    }
+    
+    // Bật chế độ theo dõi hướng
+    setCompassMode('follow');
+    
+    // Hạ bottom sheet xuống
+    Animated.timing(bottomSheetAnimation, {
+      toValue: BOTTOM_SHEET_MIN_HEIGHT,
+      duration: 300,
+      useNativeDriver: false,
+      easing: Easing.out(Easing.ease)
+    }).start();
+    
+    setIsBottomSheetExpanded(false);
+    
+    // Bắt đầu theo dõi vị trí để cập nhật điều hướng
+    startLocationTracking();
+    
+    // Cập nhật thông tin điều hướng ban đầu
+    updateNavigation();
+  };
+  
+  // Hàm cập nhật thông tin điều hướng dựa trên vị trí hiện tại
+  const updateNavigation = useCallback(() => {
+    if (!isNavigating || !route || !location || !route.legs || !route.legs[0]?.steps) return;
+    
+    // Lấy các bước trong lộ trình
+    const steps = route.legs[0].steps;
+    
+    if (currentStepIndex >= steps.length) {
+      // Đã hoàn thành lộ trình
+      setIsNavigating(false);
+      Alert.alert('Hoàn thành', 'Bạn đã đến điểm đến!');
+      return;
+    }
+    
+    // Tính khoảng cách đến bước tiếp theo
+    const nextStep = steps[currentStepIndex];
+    
+    // TODO: Tính toán khoảng cách chính xác từ vị trí hiện tại đến điểm tiếp theo
+    // Đây là phần giả định đơn giản
+    const distance = Math.max(0, nextStep.distance - 50 * currentStepIndex);
+    setDistanceToNextStep(distance);
+    
+    // Kiểm tra xem đã đến bước tiếp theo chưa (giả định đơn giản)
+    if (distance < 20) {
+      setCurrentStepIndex(prev => prev + 1);
+    }
+  }, [isNavigating, route, location, currentStepIndex]);
+  
+  // Theo dõi vị trí để cập nhật điều hướng
+  useEffect(() => {
+    if (isNavigating && location) {
+      updateNavigation();
+    }
+  }, [isNavigating, location, updateNavigation]);
+  
+  // Hàm dừng điều hướng
+  const stopNavigation = () => {
+    setIsNavigating(false);
+    setCompassMode('off');
+    
+    // Hạ bottom sheet xuống
+    Animated.timing(bottomSheetAnimation, {
+      toValue: BOTTOM_SHEET_MIN_HEIGHT,
+      duration: 300,
+      useNativeDriver: false,
+      easing: Easing.out(Easing.ease)
+    }).start();
+    
+    setIsBottomSheetExpanded(false);
+    
+    // Zoom ra để nhìn toàn bộ lộ trình
+    if (mapRef.current && route) {
+      mapRef.current.fitToCoordinates(
+        route.geometry.coordinates.map(coord => ({
+          latitude: coord[1],
+          longitude: coord[0]
+        })),
+        {
+          edgePadding: { top: 70, right: 70, bottom: 200, left: 70 },
+          animated: true
+        }
+      );
     }
   };
 
@@ -886,17 +979,20 @@ const MapScreen = () => {
           mapType={mapType}
           onMapReady={() => setMapReady(true)}
           showsMyLocationButton={false}
-          followsUserLocation={false} // Tắt tính năng này để tự quản lý
-          customMapStyle={theme === 'dark' ? currentTheme.mapStyle : undefined}
+          customMapStyle={theme === 'dark' ? currentTheme.mapStyle : []}
           onPress={(e) => {
             if (showSearchResults) {
               handleCloseSearch();
               return;
             }
             
-            if (!showDirectionsUI) {
+            if (!isNavigating) {
               const coords = e.nativeEvent.coordinate;
               setMarkerCoords(coords);
+              
+              // Hiển thị loading indicator tại vị trí được chọn
+              setIsLoadingReverseGeocode(true);
+              
               reverseGeocode(coords).then(place => {
                 if (place) {
                   setSelectedPlace(place);
@@ -959,7 +1055,7 @@ const MapScreen = () => {
               <View className="items-center justify-center">
                 {isLoadingReverseGeocode ? (
                   <View className="bg-white p-2 rounded-full">
-                                          <ActivityIndicator size="small" color={currentTheme.colors.primary} />
+                    <ActivityIndicator size="small" color={currentTheme.colors.primary} />
                   </View>
                 ) : (
                   <View className="bg-primary p-2 rounded-full">
@@ -978,7 +1074,7 @@ const MapScreen = () => {
                 longitude: coord[0]
               }))}
               strokeWidth={5}
-                                        strokeColor={currentTheme.colors.primary}
+              strokeColor={currentTheme.colors.primary}
               lineCap="round"
               lineJoin="round"
             />
@@ -991,8 +1087,44 @@ const MapScreen = () => {
         {/* Hiển thị chỉ báo hướng */}
         {renderCompassIndicator()}
         
+        {/* Hiển thị chỉ dẫn lớn khi đang điều hướng */}
+        {isNavigating && route && route.legs && route.legs[0]?.steps && currentStepIndex < route.legs[0].steps.length && (
+          <View 
+            className="absolute top-0 left-0 right-0 z-30"
+            style={{ 
+              backgroundColor: currentTheme.colors.primary,
+              paddingTop: insets.top,
+              paddingBottom: 20
+            }}
+          >
+            <View className="px-4 py-3 flex-row items-center">
+              <TouchableOpacity
+                onPress={stopNavigation}
+                className="mr-3 p-1"
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
+              </TouchableOpacity>
+              
+              <View className="flex-1">
+                <Text className="text-white text-lg font-bold">
+                  {route.legs[0].steps[currentStepIndex].name || 'Tiếp tục đi thẳng'}
+                </Text>
+                
+                {distanceToNextStep !== null && (
+                  <Text className="text-white text-2xl font-bold mt-1">
+                    {distanceToNextStep < 1000 
+                      ? `${Math.round(distanceToNextStep)} m` 
+                      : `${(distanceToNextStep / 1000).toFixed(1)} km`}
+                  </Text>
+                )}
+              </View>
+            </View>
+          </View>
+        )}
+        
         {/* Thanh tìm kiếm ở trên cùng - đơn giản hóa */}
-        {!showDirectionsUI && (
+        {!showDirectionsUI && !isNavigating && (
           <View 
             className="absolute top-0 left-0 right-0 px-4 z-10"
             style={{
@@ -1317,6 +1449,67 @@ const MapScreen = () => {
                     </View>
                   ) : (
                     <>
+                      {/* Nút Bắt đầu điều hướng */}
+                      {!isNavigating && route && route.legs && route.legs.length > 0 && (
+                        <TouchableOpacity
+                          className="mb-4 py-3 px-4 rounded-lg items-center"
+                          style={{ backgroundColor: currentTheme.colors.primary }}
+                          onPress={startNavigation}
+                        >
+                          <Text className="text-white font-bold text-base">
+                            Bắt đầu điều hướng
+                          </Text>
+                        </TouchableOpacity>
+                      )}
+                      
+                      {/* Nút Dừng điều hướng */}
+                      {isNavigating && (
+                        <TouchableOpacity
+                          className="mb-4 py-3 px-4 rounded-lg items-center"
+                          style={{ backgroundColor: currentTheme.colors.error }}
+                          onPress={stopNavigation}
+                        >
+                          <Text className="text-white font-bold text-base">
+                            Dừng điều hướng
+                          </Text>
+                        </TouchableOpacity>
+                      )}
+                      
+                      {/* Hiển thị bước hiện tại khi đang điều hướng */}
+                      {isNavigating && route && route.legs && route.legs[0]?.steps && currentStepIndex < route.legs[0].steps.length && (
+                        <View 
+                          className="mb-4 p-4 rounded-lg"
+                          style={{ backgroundColor: currentTheme.colors.backgroundHighlight }}
+                        >
+                          <Text 
+                            className="text-lg font-bold mb-1"
+                            style={{ color: currentTheme.colors.text }}
+                          >
+                            {route.legs[0].steps[currentStepIndex].name || 'Tiếp tục đi thẳng'}
+                          </Text>
+                          
+                          {distanceToNextStep !== null && (
+                            <Text 
+                              className="text-base"
+                              style={{ color: currentTheme.colors.primary }}
+                            >
+                              {distanceToNextStep < 1000 
+                                ? `${Math.round(distanceToNextStep)} m` 
+                                : `${(distanceToNextStep / 1000).toFixed(1)} km`}
+                            </Text>
+                          )}
+                          
+                          {currentStepIndex < route.legs[0].steps.length - 1 && (
+                            <Text 
+                              className="text-sm mt-2"
+                              style={{ color: currentTheme.colors.textSecondary }}
+                            >
+                              Tiếp theo: {route.legs[0].steps[currentStepIndex + 1].name || 'Tiếp tục đi thẳng'}
+                            </Text>
+                          )}
+                        </View>
+                      )}
+                      
                       {(route && route.legs && Array.isArray(route.legs) && route.legs.length > 0 && route.legs[0]?.steps) ? (
                         <FlatList
                           data={(route.legs && route.legs[0] && route.legs[0].steps) ? route.legs[0].steps : []}
