@@ -14,15 +14,19 @@ const useLocation = () => {
   const [watchId, setWatchId] = useState(null);
   const [headingWatchId, setHeadingWatchId] = useState(null);
   const [isTracking, setIsTracking] = useState(false);
-  const [heading, setHeading] = useState(0); // Thêm state cho hướng
+  
+  // Sử dụng useRef để lưu trữ heading thay vì state để tránh render lại
+  const headingRef = useRef(0);
   
   // Sử dụng useRef để theo dõi lần gọi API cuối cùng
   const lastAddressRequestRef = useRef(null);
   const addressTimeoutRef = useRef(null);
   const retryCountRef = useRef(0);
+  const lastLocationUpdateRef = useRef(null);
   const MAX_RETRIES = 3;
   const RETRY_DELAY = 3000; // 3 giây
   const ADDRESS_DEBOUNCE = 5000; // 5 giây
+  const LOCATION_UPDATE_THRESHOLD = 20; // Chỉ cập nhật nếu di chuyển hơn 20m
 
   /**
    * Lấy vị trí hiện tại
@@ -86,7 +90,14 @@ const useLocation = () => {
   }, []);
 
   /**
-   * Bắt đầu theo dõi hướng (heading)
+   * Lấy heading hiện tại (không gây render lại)
+   */
+  const getCurrentHeading = useCallback(() => {
+    return headingRef.current;
+  }, []);
+
+  /**
+   * Bắt đầu theo dõi hướng (heading) với tần suất cao
    */
   const startHeadingTracking = useCallback(async () => {
     try {
@@ -96,9 +107,13 @@ const useLocation = () => {
         return;
       }
       
+      // Thiết lập tần suất cập nhật cao hơn cho heading
       const headingId = await Location.watchHeadingAsync((headingData) => {
-        // Cập nhật heading state
-        setHeading(headingData.magHeading);
+        // Cập nhật headingRef với giá trị mới
+        const newHeading = headingData.magHeading || headingData.trueHeading;
+        if (newHeading !== null && !isNaN(newHeading)) {
+          headingRef.current = newHeading;
+        }
       });
       
       setHeadingWatchId(headingId);
@@ -120,12 +135,12 @@ const useLocation = () => {
         return;
       }
       
-      // Bắt đầu theo dõi vị trí với tần suất cao hơn
+      // Bắt đầu theo dõi vị trí với tần suất hợp lý
       const id = await Location.watchPositionAsync(
         {
-          accuracy: Location.Accuracy.High, // Tăng độ chính xác
-          timeInterval: 1000, // Giảm thời gian cập nhật xuống 1 giây
-          distanceInterval: 5, // Giảm khoảng cách cập nhật xuống 5 mét
+          accuracy: Location.Accuracy.High,
+          timeInterval: 1000,  // Cập nhật mỗi 1 giây
+          distanceInterval: LOCATION_UPDATE_THRESHOLD  // Chỉ cập nhật nếu di chuyển hơn 20m
         },
         (newLocation) => {
           const currentLocation = {
@@ -134,19 +149,28 @@ const useLocation = () => {
             timestamp: newLocation.timestamp,
             accuracy: newLocation.coords.accuracy,
             speed: newLocation.coords.speed,
-            heading: newLocation.coords.heading // Lưu heading từ location nếu có
+            heading: newLocation.coords.heading
           };
           
-          setLocation(currentLocation);
-          
-          // Cập nhật heading nếu có
-          if (newLocation.coords.heading !== null) {
-            setHeading(newLocation.coords.heading);
+          // Chỉ cập nhật state nếu vị trí thay đổi đáng kể
+          if (!lastLocationUpdateRef.current || 
+              calculateDistance(
+                lastLocationUpdateRef.current, 
+                currentLocation
+              ) > LOCATION_UPDATE_THRESHOLD / 1000) {
+            
+            setLocation(currentLocation);
+            lastLocationUpdateRef.current = currentLocation;
+            
+            // Chỉ cập nhật địa chỉ nếu vị trí thay đổi đáng kể (> 50m)
+            if (!location || calculateDistance(location, currentLocation) > 0.05) {
+              getAddressWithDebounce(currentLocation.latitude, currentLocation.longitude);
+            }
           }
           
-          // Chỉ cập nhật địa chỉ nếu vị trí thay đổi đáng kể (> 50m)
-          if (!location || calculateDistance(location, currentLocation) > 0.05) {
-            getAddressWithDebounce(currentLocation.latitude, currentLocation.longitude);
+          // Cập nhật heading từ location nếu có và cảm biến từ trường không khả dụng
+          if (newLocation.coords.heading !== null && !isNaN(newLocation.coords.heading)) {
+            headingRef.current = newLocation.coords.heading;
           }
         }
       );
@@ -154,7 +178,7 @@ const useLocation = () => {
       setWatchId(id);
       setIsTracking(true);
       
-      // Bắt đầu theo dõi hướng riêng biệt để có cập nhật thường xuyên hơn
+      // Bắt đầu theo dõi hướng riêng biệt
       startHeadingTracking();
       
     } catch (err) {
@@ -232,7 +256,7 @@ const useLocation = () => {
     loading,
     error,
     isTracking,
-    heading, // Trả về heading
+    getCurrentHeading, // Trả về hàm để lấy heading hiện tại
     getCurrentLocation,
     startLocationTracking,
     stopLocationTracking

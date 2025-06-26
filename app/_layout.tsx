@@ -5,11 +5,14 @@ import { StatusBar } from 'expo-status-bar';
 import React, { useEffect } from 'react';
 import { PaperProvider } from 'react-native-paper';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { ThemeProvider, useTheme } from './contexts/ThemeContext';
 
 // Giữ màn hình splash hiển thị cho đến khi ứng dụng sẵn sàng
 SplashScreen.preventAutoHideAsync();
 
-export default function RootLayout() {
+function AppContent() {
+  const { theme } = useTheme();
+
   useEffect(() => {
     // Yêu cầu quyền truy cập vị trí khi ứng dụng khởi động
     (async () => {
@@ -30,9 +33,17 @@ export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <PaperProvider>
-        <StatusBar style="dark" />
+        <StatusBar style={theme === 'dark' ? 'light' : 'dark'} />
         <Slot />
       </PaperProvider>
     </SafeAreaProvider>
+  );
+}
+
+export default function RootLayout() {
+  return (
+    <ThemeProvider>
+      <AppContent />
+    </ThemeProvider>
   );
 }

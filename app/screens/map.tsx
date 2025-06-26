@@ -19,7 +19,9 @@ import {
 import { GestureHandlerRootView, PanGestureHandler } from 'react-native-gesture-handler';
 import MapView, { MapType, Marker, Polyline, PROVIDER_DEFAULT } from 'react-native-maps';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import theme from '../constants/theme';
+import ThemeToggleButton from '../components/ThemeToggleButton';
+import { getTheme } from '../constants/theme';
+import { useTheme as useAppTheme } from '../contexts/ThemeContext';
 import useDebounce from '../hooks/useDebounce';
 import useLocation from '../hooks/useLocation';
 import usePlaces from '../hooks/usePlaces';
@@ -107,52 +109,85 @@ const SearchBar = ({
   onFocus?: () => void;
   placeholder: string;
   autoFocus?: boolean;
-}) => (
-  <View className="flex-row items-center bg-white rounded-md p-2 shadow-sm">
-    <View className="w-8 h-8 rounded-full bg-backgroundHighlight justify-center items-center mr-2">
-      <Ionicons name="search" size={18} color={theme.colors.primary} />
-    </View>
-    
-    <TextInput
-      className="flex-1 text-text"
-      placeholder={placeholder}
-      placeholderTextColor={theme.colors.textSecondary}
-      value={value}
-      onChangeText={onChangeText}
-      onSubmitEditing={onSubmitEditing}
-      onFocus={onFocus}
-      returnKeyType="search"
-      autoFocus={autoFocus}
-    />
-    
-    {value.length > 0 && (
-      <TouchableOpacity
-        onPress={() => onChangeText('')}
-        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+}) => {
+  const { theme } = useAppTheme();
+  const currentTheme = getTheme(theme);
+  
+  return (
+    <View 
+      className="flex-row items-center rounded-md p-2 shadow-sm"
+      style={{
+        backgroundColor: currentTheme.colors.card,
+        borderColor: currentTheme.colors.border,
+        borderWidth: 1,
+      }}
+    >
+      <View 
+        className="w-8 h-8 rounded-full justify-center items-center mr-2"
+        style={{ backgroundColor: currentTheme.colors.backgroundHighlight }}
       >
-        <Ionicons name="close-circle" size={20} color={theme.colors.grey} />
-      </TouchableOpacity>
-    )}
-  </View>
-);
+        <Ionicons name="search" size={18} color={currentTheme.colors.primary} />
+      </View>
+      
+      <TextInput
+        className="flex-1"
+        placeholder={placeholder}
+        placeholderTextColor={currentTheme.colors.textSecondary}
+        value={value}
+        onChangeText={onChangeText}
+        onSubmitEditing={onSubmitEditing}
+        onFocus={onFocus}
+        returnKeyType="search"
+        autoFocus={autoFocus}
+        style={{
+          color: currentTheme.colors.text,
+        }}
+      />
+      
+      {value.length > 0 && (
+        <TouchableOpacity
+          onPress={() => onChangeText('')}
+        >
+          <Ionicons name="close-circle" size={20} color={currentTheme.colors.grey} />
+        </TouchableOpacity>
+      )}
+    </View>
+  );
+};
 
 // Nút điều khiển bản đồ (zoom in/out)
-const MapControls = React.memo(({ onZoomIn, onZoomOut }: { onZoomIn: () => void; onZoomOut: () => void }) => (
-  <View className="absolute right-4 top-1/4 bg-white rounded-full shadow-md overflow-hidden">
-    <TouchableOpacity 
-      className="p-3 border-b border-border"
-      onPress={onZoomIn}
+const MapControls = React.memo(({ onZoomIn, onZoomOut }: { onZoomIn: () => void; onZoomOut: () => void }) => {
+  const { theme } = useAppTheme();
+  const currentTheme = getTheme(theme);
+  
+  return (
+    <View 
+      className="absolute right-4 top-1/4 rounded-full shadow-md overflow-hidden"
+      style={{
+        backgroundColor: currentTheme.colors.card,
+        shadowColor: currentTheme.colors.text,
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+        elevation: 3,
+      }}
     >
-      <Ionicons name="add" size={22} color={theme.colors.text} />
-    </TouchableOpacity>
-    <TouchableOpacity 
-      className="p-3"
-      onPress={onZoomOut}
-    >
-      <Ionicons name="remove" size={22} color={theme.colors.text} />
-    </TouchableOpacity>
-  </View>
-));
+      <TouchableOpacity 
+        className="p-3 border-b"
+        onPress={onZoomIn}
+        style={{ borderBottomColor: currentTheme.colors.border }}
+      >
+        <Ionicons name="add" size={22} color={currentTheme.colors.text} />
+      </TouchableOpacity>
+      <TouchableOpacity 
+        className="p-3"
+        onPress={onZoomOut}
+      >
+        <Ionicons name="remove" size={22} color={currentTheme.colors.text} />
+      </TouchableOpacity>
+    </View>
+  );
+});
 
 // Thêm displayName để tránh lỗi ESLint
 MapControls.displayName = 'MapControls';
@@ -178,86 +213,133 @@ const BottomSheetHeader = React.memo(({
   endPlaceName: string;
   onSearchPress: () => void;
   showDirectionsUI: boolean;
-}) => (
-  <View className="px-4 pt-2 pb-3">
-    {/* Nút mở rộng / thu gọn - làm rộng hơn */}
-    <TouchableOpacity 
-      className="p-2 items-center"
-      onPress={onToggleExpand}
-      activeOpacity={0.7}
-    >
-      <View className="w-12 h-1 bg-border rounded-full mb-2" />
-    </TouchableOpacity>
-    
-    {showDirectionsUI && route ? (
-      <View className="mt-1">
-        <Text className="text-xl font-bold text-text">
-          {route.formattedDistance} ({route.formattedDuration})
-        </Text>
-        <Text className="text-base text-textSecondary mb-2">
-          {startPlaceName} → {endPlaceName}
-        </Text>
-      </View>
-    ) : showDirectionsUI ? (
-      <View className="h-12 justify-center">
-        <Text className="text-base text-textSecondary">Đang tìm đường...</Text>
-      </View>
-    ) : (
+}) => {
+  const { theme } = useAppTheme();
+  const currentTheme = getTheme(theme);
+  
+  return (
+    <View className="px-4 pt-2 pb-3">
+      {/* Nút mở rộng / thu gọn - làm rộng hơn */}
       <TouchableOpacity 
-        className="flex-row items-center bg-white rounded-md p-3 my-2 shadow-sm"
-        onPress={onSearchPress}
+        className="p-2 items-center"
+        onPress={onToggleExpand}
+        activeOpacity={0.7}
       >
-        <View className="w-8 h-8 rounded-full bg-backgroundHighlight justify-center items-center mr-2">
-          <Ionicons name="search" size={18} color={theme.colors.primary} />
-        </View>
-        <Text className="flex-1 text-textSecondary">Tìm kiếm địa điểm...</Text>
+        <View 
+          className="w-12 h-1 rounded-full mb-2" 
+          style={{ backgroundColor: currentTheme.colors.border }}
+        />
       </TouchableOpacity>
-    )}
-    
-    {/* Transport modes */}
-    {showDirectionsUI && (
-      <View className="flex-row justify-around py-3">
-        {TRANSPORT_MODES.map(mode => (
-          <TouchableOpacity
-            key={mode.id}
-            className={`items-center p-3 ${transportMode === mode.id ? 'bg-backgroundHighlight rounded-xl' : ''}`}
-            onPress={() => onTransportModeChange(mode.id)}
-            style={{ minWidth: 70 }}
+      
+      {showDirectionsUI && route ? (
+        <View className="mt-1">
+          <Text 
+            className="text-xl font-bold"
+            style={{ color: currentTheme.colors.text }}
           >
-            <FontAwesome5 
-              name={mode.icon} 
-              size={20} 
-              color={transportMode === mode.id ? theme.colors.primary : theme.colors.text} 
-            />
-            <Text 
-              className={`text-sm mt-1 ${transportMode === mode.id ? 'text-primary font-bold' : 'text-textSecondary'}`}
+            {route.formattedDistance} ({route.formattedDuration})
+          </Text>
+          <Text 
+            className="text-base mb-2"
+            style={{ color: currentTheme.colors.textSecondary }}
+          >
+            {startPlaceName} → {endPlaceName}
+          </Text>
+        </View>
+      ) : showDirectionsUI ? (
+        <View className="h-12 justify-center">
+          <Text 
+            className="text-base"
+            style={{ color: currentTheme.colors.textSecondary }}
+          >
+            Đang tìm đường...
+          </Text>
+        </View>
+      ) : (
+        <TouchableOpacity 
+          className="flex-row items-center rounded-md p-3 my-2 shadow-sm"
+          onPress={onSearchPress}
+          style={{
+            backgroundColor: currentTheme.colors.card,
+            shadowColor: currentTheme.colors.text,
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.1,
+            shadowRadius: 4,
+            elevation: 3,
+          }}
+        >
+          <View 
+            className="w-8 h-8 rounded-full justify-center items-center mr-2"
+            style={{ backgroundColor: currentTheme.colors.backgroundHighlight }}
+          >
+            <Ionicons name="search" size={18} color={currentTheme.colors.primary} />
+          </View>
+          <Text 
+            className="flex-1"
+            style={{ color: currentTheme.colors.textSecondary }}
+          >
+            Tìm kiếm địa điểm...
+          </Text>
+        </TouchableOpacity>
+      )}
+      
+      {/* Transport modes */}
+      {showDirectionsUI && (
+        <View className="flex-row justify-around py-3">
+          {TRANSPORT_MODES.map(mode => (
+            <TouchableOpacity
+              key={mode.id}
+              className={`items-center p-3 ${transportMode === mode.id ? 'rounded-xl' : ''}`}
+              onPress={() => onTransportModeChange(mode.id)}
+              style={{ 
+                minWidth: 70,
+                backgroundColor: transportMode === mode.id ? currentTheme.colors.backgroundHighlight : 'transparent'
+              }}
             >
-              {mode.name}
-            </Text>
+              <FontAwesome5 
+                name={mode.icon} 
+                size={20} 
+                color={transportMode === mode.id ? currentTheme.colors.primary : currentTheme.colors.text} 
+              />
+              <Text 
+                className={`text-sm mt-1 ${transportMode === mode.id ? 'font-bold' : ''}`}
+                style={{ 
+                  color: transportMode === mode.id ? currentTheme.colors.primary : currentTheme.colors.textSecondary 
+                }}
+              >
+                {mode.name}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
+      
+      {/* Buttons */}
+      {showDirectionsUI && route && (
+        <View className="flex-row justify-between mt-1">
+          <TouchableOpacity
+            className="flex-1 mr-2 flex-row items-center justify-center py-3 rounded-xl"
+            style={{ backgroundColor: currentTheme.colors.primary }}
+          >
+            <Ionicons name="navigate" size={20} color="#FFF" />
+            <Text className="text-white font-bold ml-2">Bắt đầu</Text>
           </TouchableOpacity>
-        ))}
-      </View>
-    )}
-    
-    {/* Buttons */}
-    {showDirectionsUI && route && (
-      <View className="flex-row justify-between mt-1">
-        <TouchableOpacity
-          className="flex-1 mr-2 flex-row items-center justify-center bg-primary py-3 rounded-xl"
-        >
-          <Ionicons name="navigate" size={20} color="#FFF" />
-          <Text className="text-white font-bold ml-2">Bắt đầu</Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity
-          className="w-14 items-center justify-center bg-card border border-border rounded-xl"
-        >
-          <Ionicons name="share-social-outline" size={20} color={theme.colors.text} />
-        </TouchableOpacity>
-      </View>
-    )}
-  </View>
-));
+          
+          <TouchableOpacity
+            className="w-14 items-center justify-center rounded-xl"
+            style={{ 
+              backgroundColor: currentTheme.colors.card,
+              borderColor: currentTheme.colors.border,
+              borderWidth: 1
+            }}
+          >
+            <Ionicons name="share-social-outline" size={20} color={currentTheme.colors.text} />
+          </TouchableOpacity>
+        </View>
+      )}
+    </View>
+  );
+});
 
 // Thêm displayName để tránh lỗi ESLint
 BottomSheetHeader.displayName = 'BottomSheetHeader';
@@ -267,6 +349,8 @@ const MapScreen = () => {
   const navigation = useNavigation();
   const router = useRouter();
   const params = useLocalSearchParams();
+  const { theme } = useAppTheme();
+  const currentTheme = getTheme(theme);
   
   const [mapReady, setMapReady] = useState(false);
   const [selectedPlace, setSelectedPlace] = useState<Place | null>(null);
@@ -316,13 +400,22 @@ const MapScreen = () => {
   const initialLocationRef = useRef<LocationType | null>(null);
   const initialParamsProcessed = useRef(false);
   
+  const [followUserHeading, setFollowUserHeading] = useState(false);
+  const [mapType, setMapType] = useState<MapType>('standard');
+  const [currentHeading, setCurrentHeading] = useState(0);
+  const [compassMode, setCompassMode] = useState<'off' | 'follow' | 'rotate'>('off');
+  
+  // Animation ref để tránh tạo animation mới khi đang có animation
+  const animationInProgressRef = useRef(false);
+  const headingUpdateIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  
   const { 
     location, 
     address, 
     loading: locationLoading, 
     error: locationError, 
-    isTracking, 
-    heading, 
+    isTracking,
+    getCurrentHeading, 
     startLocationTracking, 
     getCurrentLocation, 
     stopLocationTracking 
@@ -332,7 +425,7 @@ const MapScreen = () => {
     loading: boolean;
     error: string | null;
     isTracking: boolean;
-    heading: number;
+    getCurrentHeading: () => number;
     startLocationTracking: () => void;
     getCurrentLocation: () => void;
     stopLocationTracking: () => void;
@@ -345,9 +438,6 @@ const MapScreen = () => {
     getRoute: (start: Coordinates, end: Coordinates, mode: string) => Promise<RouteType | null>;
     clearRoute: () => void;
   };
-
-  const [followUserHeading, setFollowUserHeading] = useState(false);
-  const [mapType, setMapType] = useState<MapType>('standard');
 
   // Định nghĩa initialRegion
   const initialRegion = useMemo(() => ({
@@ -637,39 +727,95 @@ const MapScreen = () => {
     });
   };
 
-  // Xử lý theo dõi hướng người dùng
+  // Xử lý theo dõi hướng người dùng - sử dụng interval thay vì requestAnimationFrame
   useEffect(() => {
-    if (followUserHeading && location && heading !== undefined && mapRef.current) {
-      // Sử dụng animateCamera để xoay bản đồ mượt mà theo hướng người dùng
-      mapRef.current.animateCamera({
-        heading: heading,
-        center: {
-          latitude: location.latitude,
-          longitude: location.longitude
-        },
-        pitch: 0,
-        zoom: 18, // Zoom gần hơn khi theo dõi hướng
-      }, { duration: 300 }); // Thời gian animation ngắn để cảm giác mượt mà
+    // Xóa interval cũ nếu có
+    if (headingUpdateIntervalRef.current) {
+      clearInterval(headingUpdateIntervalRef.current);
+      headingUpdateIntervalRef.current = null;
     }
-  }, [heading, followUserHeading, location]);
+    
+    // Nếu đang theo dõi hướng, tạo interval mới
+    if (compassMode !== 'off') {
+      headingUpdateIntervalRef.current = setInterval(() => {
+        if (location && !animationInProgressRef.current) {
+          const heading = getCurrentHeading();
+          
+          // Chỉ cập nhật nếu heading thay đổi đáng kể
+          if (Math.abs(heading - currentHeading) > 3) {
+            setCurrentHeading(heading);
+            
+            if (compassMode === 'rotate') {
+              // Đánh dấu đang có animation
+              animationInProgressRef.current = true;
+              
+              try {
+                mapRef.current?.animateCamera({
+                  heading: heading,
+                  center: {
+                    latitude: location.latitude,
+                    longitude: location.longitude
+                  },
+                  pitch: 0,
+                  zoom: 18, // Zoom gần hơn khi theo dõi hướng
+                }, { duration: 200 });
+                
+                // Đặt timeout để đánh dấu animation đã hoàn thành
+                setTimeout(() => {
+                  animationInProgressRef.current = false;
+                }, 250);
+              } catch (error) {
+                console.error('Error animating camera:', error);
+                animationInProgressRef.current = false;
+              }
+            } else if (compassMode === 'follow') {
+              // Chỉ cập nhật vị trí mà không xoay bản đồ
+              mapRef.current?.animateCamera({
+                center: {
+                  latitude: location.latitude,
+                  longitude: location.longitude
+                },
+                zoom: 18
+              }, { duration: 200 });
+            }
+          }
+        }
+      }, 100); // Cập nhật mỗi 100ms để có độ mượt cao
+    }
+    
+    return () => {
+      if (headingUpdateIntervalRef.current) {
+        clearInterval(headingUpdateIntervalRef.current);
+        headingUpdateIntervalRef.current = null;
+      }
+    };
+  }, [compassMode, location, getCurrentHeading, currentHeading]);
 
   // Nút chuyển đổi chế độ theo dõi hướng
-  const toggleFollowHeading = () => {
-    const newFollowHeading = !followUserHeading;
-    setFollowUserHeading(newFollowHeading);
+  const toggleCompassMode = () => {
+    // Xoay qua các chế độ: off -> follow -> rotate -> off
+    const modes: ('off' | 'follow' | 'rotate')[] = ['off', 'follow', 'rotate'];
+    const currentIndex = modes.indexOf(compassMode);
+    const nextIndex = (currentIndex + 1) % modes.length;
+    const newMode = modes[nextIndex];
     
-    if (newFollowHeading && location) {
-      // Nếu bật chế độ theo dõi hướng, zoom đến vị trí người dùng
+    setCompassMode(newMode);
+    
+    if (newMode !== 'off' && location) {
+      // Nếu bật chế độ theo dõi, zoom đến vị trí người dùng
+      const heading = getCurrentHeading();
+      setCurrentHeading(heading);
+      
       mapRef.current?.animateCamera({
         center: {
           latitude: location.latitude,
           longitude: location.longitude
         },
-        heading: heading || 0,
+        heading: newMode === 'rotate' ? heading : 0,
         pitch: 0,
         zoom: 18
       }, { duration: 500 });
-    } else {
+    } else if (newMode === 'off') {
       // Nếu tắt chế độ theo dõi hướng, reset về hướng bắc
       mapRef.current?.animateCamera({
         heading: 0,
@@ -678,10 +824,46 @@ const MapScreen = () => {
     }
   };
 
+  // Thêm hàm để cập nhật vị trí người dùng mà không cần animation
+  const centerMapOnUser = useCallback(() => {
+    if (location) {
+      mapRef.current?.animateCamera({
+        center: {
+          latitude: location.latitude,
+          longitude: location.longitude
+        },
+        heading: compassMode === 'rotate' ? getCurrentHeading() : 0,
+        zoom: compassMode !== 'off' ? 18 : 16,
+        pitch: 0
+      }, { duration: 300 });
+    } else {
+      getCurrentLocation();
+    }
+  }, [location, compassMode, getCurrentHeading, getCurrentLocation]);
+
+  // Hiển thị chỉ báo hướng
+  const renderCompassIndicator = () => {
+    if (compassMode !== 'off') {
+      return (
+        <View className="absolute top-32 left-4 bg-white p-2 rounded-lg shadow-md z-10 items-center">
+          <Text className="text-xs text-textSecondary">Hướng</Text>
+          <View className="flex-row items-center">
+            <Ionicons name="compass" size={16} color={theme.colors.primary} />
+            <Text className="ml-1 font-bold">{Math.round(currentHeading)}°</Text>
+          </View>
+        </View>
+      );
+    }
+    return null;
+  };
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <View className="flex-1 bg-background">
-        <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
+      <View 
+        className="flex-1"
+        style={{ backgroundColor: currentTheme.colors.background }}
+      >
+        <StatusBar barStyle={theme === 'dark' ? 'light-content' : 'dark-content'} backgroundColor="transparent" translucent />
         
         {/* Bản đồ */}
         <MapView
@@ -698,7 +880,7 @@ const MapScreen = () => {
           mapType={mapType}
           onMapReady={() => setMapReady(true)}
           showsMyLocationButton={false}
-          followsUserLocation={followUserHeading}
+          followsUserLocation={false} // Tắt tính năng này để tự quản lý
           onPress={(e) => {
             if (showSearchResults) {
               handleCloseSearch();
@@ -754,6 +936,12 @@ const MapScreen = () => {
               setIsLoadingReverseGeocode(false);
             });
           }}
+          onPanDrag={() => {
+            // Nếu người dùng kéo bản đồ, tắt chế độ theo dõi hướng
+            if (compassMode !== 'off') {
+              setCompassMode('off');
+            }
+          }}
         >
           {/* Hiển thị marker cho địa điểm được chọn */}
           {markerCoords && (
@@ -793,6 +981,9 @@ const MapScreen = () => {
         {/* Nút zoom */}
         <MapControls onZoomIn={handleZoomIn} onZoomOut={handleZoomOut} />
         
+        {/* Hiển thị chỉ báo hướng */}
+        {renderCompassIndicator()}
+        
         {/* Thanh tìm kiếm ở trên cùng - đơn giản hóa */}
         {!showDirectionsUI && (
           <View 
@@ -807,11 +998,29 @@ const MapScreen = () => {
               onPress={handleSearchFocus}
               className="shadow-sm"
             >
-              <View className="flex-row items-center bg-white rounded-lg p-3 shadow-sm">
-                <View className="w-8 h-8 rounded-full bg-backgroundHighlight justify-center items-center mr-2">
-                  <Ionicons name="search" size={18} color={theme.colors.primary} />
+              <View 
+                className="flex-row items-center rounded-lg p-3 shadow-sm"
+                style={{
+                  backgroundColor: currentTheme.colors.card,
+                  shadowColor: currentTheme.colors.text,
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: 0.1,
+                  shadowRadius: 4,
+                  elevation: 3,
+                }}
+              >
+                <View 
+                  className="w-8 h-8 rounded-full justify-center items-center mr-2"
+                  style={{ backgroundColor: currentTheme.colors.backgroundHighlight }}
+                >
+                  <Ionicons name="search" size={18} color={currentTheme.colors.primary} />
                 </View>
-                <Text className="flex-1 text-textSecondary">Tìm kiếm địa điểm...</Text>
+                <Text 
+                  className="flex-1"
+                  style={{ color: currentTheme.colors.textSecondary }}
+                >
+                  Tìm kiếm địa điểm...
+                </Text>
               </View>
             </TouchableOpacity>
           </View>
@@ -820,8 +1029,9 @@ const MapScreen = () => {
         {/* Kết quả tìm kiếm và lịch sử - sửa lại animation */}
         {showSearchResults && (
           <Animated.View 
-            className="absolute top-0 left-0 right-0 bottom-0 bg-white z-20"
+            className="absolute top-0 left-0 right-0 bottom-0 z-20"
             style={{
+              backgroundColor: currentTheme.colors.background,
               opacity: searchBarAnimation,
               transform: [
                 { 
@@ -833,14 +1043,25 @@ const MapScreen = () => {
               ]
             }}
           >
-            <View className="bg-white shadow-sm" style={{ paddingTop: insets.top }}>
+            <View 
+              className="shadow-sm" 
+              style={{ 
+                paddingTop: insets.top,
+                backgroundColor: currentTheme.colors.card,
+                shadowColor: currentTheme.colors.text,
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.1,
+                shadowRadius: 4,
+                elevation: 3,
+              }}
+            >
               <View className="flex-row items-center px-4 py-3">
                 <TouchableOpacity 
                   onPress={handleCloseSearch}
                   className="mr-3 p-1"
                   hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 >
-                  <Ionicons name="arrow-back" size={24} color={theme.colors.primary} />
+                  <Ionicons name="arrow-back" size={24} color={currentTheme.colors.primary} />
                 </TouchableOpacity>
                 
                 <View className="flex-1">
@@ -858,7 +1079,7 @@ const MapScreen = () => {
             {/* Hiển thị indicator khi đang tìm kiếm */}
             {searchLoading ? (
               <View className="flex-1 justify-center items-center">
-                <ActivityIndicator size="large" color={theme.colors.primary} />
+                <ActivityIndicator size="large" color={currentTheme.colors.primary} />
               </View>
             ) : (
               <FlatList
@@ -869,37 +1090,76 @@ const MapScreen = () => {
                 contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}
                 ListHeaderComponent={
                   searchQuery.length < 2 ? (
-                    <View className="px-4 py-3 bg-backgroundHighlight">
-                      <Text className="text-base font-bold text-text">Lịch sử tìm kiếm</Text>
+                    <View 
+                      className="px-4 py-3"
+                      style={{ backgroundColor: currentTheme.colors.backgroundHighlight }}
+                    >
+                      <Text 
+                        className="text-base font-bold"
+                        style={{ color: currentTheme.colors.text }}
+                      >
+                        Lịch sử tìm kiếm
+                      </Text>
                     </View>
                   ) : searchResults.length > 0 ? (
-                    <View className="px-4 py-3 bg-backgroundHighlight">
-                      <Text className="text-base font-bold text-text">Kết quả tìm kiếm</Text>
+                    <View 
+                      className="px-4 py-3"
+                      style={{ backgroundColor: currentTheme.colors.backgroundHighlight }}
+                    >
+                      <Text 
+                        className="text-base font-bold"
+                        style={{ color: currentTheme.colors.text }}
+                      >
+                        Kết quả tìm kiếm
+                      </Text>
                     </View>
                   ) : null
                 }
                 renderItem={({ item }) => (
                   <TouchableOpacity 
-                    className="flex-row p-4 border-b border-border"
+                    className="flex-row p-4 border-b"
                     onPress={() => handleSelectPlace(item)}
                     activeOpacity={0.7}
+                    style={{ borderBottomColor: currentTheme.colors.border }}
                   >
-                    <View className="w-10 h-10 rounded-full bg-backgroundHighlight justify-center items-center mr-3">
+                    <View 
+                      className="w-10 h-10 rounded-full justify-center items-center mr-3"
+                      style={{ backgroundColor: currentTheme.colors.backgroundHighlight }}
+                    >
                       <Ionicons 
                         name={item.category === 'restaurant' ? 'restaurant' : 'location'} 
                         size={20} 
-                        color={theme.colors.primary} 
+                        color={currentTheme.colors.primary} 
                       />
                     </View>
                     <View className="flex-1">
-                      <Text className="text-base font-semibold text-text">{item.name}</Text>
-                      <Text className="text-sm text-textSecondary" numberOfLines={2}>{item.address}</Text>
+                      <Text 
+                        className="text-base font-semibold"
+                        style={{ color: currentTheme.colors.text }}
+                      >
+                        {item.name}
+                      </Text>
+                      <Text 
+                        className="text-sm" 
+                        numberOfLines={2}
+                        style={{ color: currentTheme.colors.textSecondary }}
+                      >
+                        {item.address}
+                      </Text>
                       {item.distance && (
-                        <Text className="text-xs text-textSecondary mt-1">{item.distance}</Text>
+                        <Text 
+                          className="text-xs mt-1"
+                          style={{ color: currentTheme.colors.textSecondary }}
+                        >
+                          {item.distance}
+                        </Text>
                       )}
                       {item.timestamp && (
-                        <Text className="text-xs text-textSecondary mt-1">
-                          <Ionicons name="time-outline" size={12} color={theme.colors.grey} />
+                        <Text 
+                          className="text-xs mt-1"
+                          style={{ color: currentTheme.colors.textSecondary }}
+                        >
+                          <Ionicons name="time-outline" size={12} color={currentTheme.colors.grey} />
                           {' '}{new Date(item.timestamp).toLocaleString()}
                         </Text>
                       )}
@@ -909,21 +1169,33 @@ const MapScreen = () => {
                 ListEmptyComponent={
                   searchQuery.length >= 2 ? (
                     <View className="flex-1 justify-center items-center py-10">
-                      <Ionicons name="search" size={64} color={theme.colors.border} />
-                      <Text className="text-lg font-bold text-text mt-4">
+                      <Ionicons name="search" size={64} color={currentTheme.colors.border} />
+                      <Text 
+                        className="text-lg font-bold mt-4"
+                        style={{ color: currentTheme.colors.text }}
+                      >
                         Không tìm thấy kết quả
                       </Text>
-                      <Text className="text-center text-textSecondary mt-2 px-8">
+                      <Text 
+                        className="text-center mt-2 px-8"
+                        style={{ color: currentTheme.colors.textSecondary }}
+                      >
                         Thử tìm kiếm với từ khóa khác
                       </Text>
                     </View>
                   ) : history.length === 0 ? (
                     <View className="flex-1 justify-center items-center py-10">
-                      <Ionicons name="time" size={64} color={theme.colors.border} />
-                      <Text className="text-lg font-bold text-text mt-4">
+                      <Ionicons name="time" size={64} color={currentTheme.colors.border} />
+                      <Text 
+                        className="text-lg font-bold mt-4"
+                        style={{ color: currentTheme.colors.text }}
+                      >
                         Lịch sử tìm kiếm trống
                       </Text>
-                      <Text className="text-center text-textSecondary mt-2 px-8">
+                      <Text 
+                        className="text-center mt-2 px-8"
+                        style={{ color: currentTheme.colors.textSecondary }}
+                      >
                         Các địa điểm bạn tìm kiếm sẽ xuất hiện ở đây
                       </Text>
                     </View>
@@ -937,7 +1209,7 @@ const MapScreen = () => {
         {/* Nút quay lại */}
         {showBackButton && (
           <TouchableOpacity 
-            className="absolute top-12 left-4 bg-white p-2 rounded-full shadow-md z-10"
+            className="absolute top-12 left-4 p-2 rounded-full shadow-md z-10"
             onPress={() => {
               setShowDirectionsUI(false);
               setSelectedPlace(null);
@@ -954,8 +1226,16 @@ const MapScreen = () => {
                 useNativeDriver: false
               }).start();
             }}
+            style={{
+              backgroundColor: currentTheme.colors.card,
+              shadowColor: currentTheme.colors.text,
+              shadowOffset: { width: 0, height: 2 },
+              shadowOpacity: 0.1,
+              shadowRadius: 4,
+              elevation: 3,
+            }}
           >
-            <Ionicons name="arrow-back" size={24} color={theme.colors.text} />
+            <Ionicons name="arrow-back" size={24} color={currentTheme.colors.text} />
           </TouchableOpacity>
         )}
         
@@ -969,13 +1249,19 @@ const MapScreen = () => {
             enabled={!showSearchResults}
           >
             <Animated.View 
-              className="absolute left-0 right-0 bottom-0 bg-white rounded-t-3xl shadow-lg z-10"
+              className="absolute left-0 right-0 bottom-0 rounded-t-3xl shadow-lg z-10"
               style={[
                 styles.bottomSheet,
                 {
                   height: bottomSheetAnimation,
                   paddingBottom: insets.bottom,
-                  transform: [{ translateY: panY }]
+                  transform: [{ translateY: panY }],
+                  backgroundColor: currentTheme.colors.card,
+                  shadowColor: currentTheme.colors.text,
+                  shadowOffset: { width: 0, height: -3 },
+                  shadowOpacity: 0.1,
+                  shadowRadius: 5,
+                  elevation: 10,
                 }
               ]}
             >
@@ -994,20 +1280,33 @@ const MapScreen = () => {
               
               {/* Hiển thị lỗi */}
               {routeError && (
-                <View className="mx-4 mb-3 p-3 bg-errorLight rounded-xl">
-                  <Text className="text-error">{routeError}</Text>
+                <View 
+                  className="mx-4 mb-3 p-3 rounded-xl"
+                  style={{ backgroundColor: currentTheme.colors.errorLight }}
+                >
+                  <Text style={{ color: currentTheme.colors.error }}>{routeError}</Text>
                 </View>
               )}
               
               {/* Phần chỉ dẫn chi tiết */}
               {showDirectionsUI && isBottomSheetExpanded && (
                 <View className="flex-1 px-4 pb-2">
-                  <Text className="text-base font-bold text-text mb-2">Chi tiết lộ trình</Text>
+                  <Text 
+                    className="text-base font-bold mb-2"
+                    style={{ color: currentTheme.colors.text }}
+                  >
+                    Chi tiết lộ trình
+                  </Text>
                   
                   {isLoading || routeLoading ? (
                     <View className="flex-1 justify-center items-center">
-                      <ActivityIndicator size="small" color={theme.colors.primary} />
-                      <Text className="mt-2 text-textSecondary">Đang tìm đường...</Text>
+                      <ActivityIndicator size="small" color={currentTheme.colors.primary} />
+                      <Text 
+                        className="mt-2"
+                        style={{ color: currentTheme.colors.textSecondary }}
+                      >
+                        Đang tìm đường...
+                      </Text>
                     </View>
                   ) : (
                     <>
@@ -1015,27 +1314,42 @@ const MapScreen = () => {
                         <FlatList
                           data={(route as any).legs?.[0]?.steps || []}
                           renderItem={({ item, index }) => (
-                            <View className="flex-row py-3 border-b border-border">
+                            <View 
+                              className="flex-row py-3 border-b"
+                              style={{ borderBottomColor: currentTheme.colors.border }}
+                            >
                               <View className="mr-3 items-center">
-                                <View className="w-10 h-10 rounded-full bg-backgroundHighlight justify-center items-center">
+                                <View 
+                                  className="w-10 h-10 rounded-full justify-center items-center"
+                                  style={{ backgroundColor: currentTheme.colors.backgroundHighlight }}
+                                >
                                   <Ionicons 
                                     name="navigate" 
                                     size={18} 
-                                    color={theme.colors.primary} 
+                                    color={currentTheme.colors.primary} 
                                   />
                                 </View>
                                 {index < ((route as any).legs?.[0]?.steps?.length - 1 || 0) && (
-                                  <View className="w-[2px] h-8 bg-border mt-1" />
+                                  <View 
+                                    className="w-[2px] h-8 mt-1"
+                                    style={{ backgroundColor: currentTheme.colors.border }}
+                                  />
                                 )}
                               </View>
                               
                               <View className="flex-1">
-                                <Text className="text-base font-semibold text-text">
+                                <Text 
+                                  className="text-base font-semibold"
+                                  style={{ color: currentTheme.colors.text }}
+                                >
                                   {item.name || (index === 0 ? 'Xuất phát' : 'Tiếp tục đi thẳng')}
                                 </Text>
                                 
                                 {item.distance > 0 && (
-                                  <Text className="text-sm text-textSecondary mt-1">
+                                  <Text 
+                                    className="text-sm mt-1"
+                                    style={{ color: currentTheme.colors.textSecondary }}
+                                  >
                                     {item.distance < 1000 
                                       ? `${Math.round(item.distance)} m` 
                                       : `${(item.distance / 1000).toFixed(1)} km`}
@@ -1055,8 +1369,11 @@ const MapScreen = () => {
                         />
                       ) : (
                         <View className="flex-1 justify-center items-center">
-                          <Ionicons name="information-circle-outline" size={36} color={theme.colors.grey} />
-                          <Text className="mt-2 text-textSecondary text-center">
+                          <Ionicons name="information-circle-outline" size={36} color={currentTheme.colors.grey} />
+                          <Text 
+                            className="mt-2 text-center"
+                            style={{ color: currentTheme.colors.textSecondary }}
+                          >
                             {routeError || 'Hướng dẫn chi tiết sẽ hiển thị ở đây khi tìm thấy đường đi.'}
                           </Text>
                         </View>
@@ -1071,94 +1388,46 @@ const MapScreen = () => {
         
         {/* Nút vị trí hiện tại */}
         <TouchableOpacity 
-          className="absolute right-4 bottom-32 bg-white p-3 rounded-full shadow-md z-10"
-          onPress={() => {
-            if (location) {
-              mapRef.current?.animateToRegion({
-                latitude: location.latitude,
-                longitude: location.longitude,
-                latitudeDelta: 0.005,
-                longitudeDelta: 0.005,
-              }, 1000);
-              
-              // Hiển thị một menu tùy chọn khi nhấn vào nút vị trí hiện tại
-              Alert.alert(
-                'Vị trí hiện tại',
-                'Bạn muốn làm gì với vị trí hiện tại?',
-                [
-                  {
-                    text: 'Hủy',
-                    style: 'cancel'
-                  },
-                  {
-                    text: 'Đặt làm điểm đến',
-                    onPress: async () => {
-                      if (location) {
-                        // Tạo place từ vị trí hiện tại
-                        const currentPlace = await reverseGeocode({
-                          latitude: location.latitude,
-                          longitude: location.longitude
-                        });
-                        
-                        if (currentPlace) {
-                          // Xử lý tương tự như khi chọn một địa điểm
-                          await savePlaceToHistory(currentPlace);
-                          setSelectedPlace(currentPlace);
-                          setMarkerCoords({
-                            latitude: currentPlace.latitude,
-                            longitude: currentPlace.longitude
-                          });
-                          setEndPlaceName(currentPlace.name);
-                          setShowBackButton(true);
-                          setShowDirectionsUI(true);
-                          
-                          // Nếu đã có điểm bắt đầu, tìm đường
-                          if (location) {
-                            findRoute(
-                              { latitude: location.latitude, longitude: location.longitude },
-                              { latitude: currentPlace.latitude, longitude: currentPlace.longitude },
-                              transportMode
-                            );
-                          }
-                        }
-                      }
-                    }
-                  },
-                  {
-                    text: 'Chia sẻ vị trí',
-                    onPress: () => {
-                      if (location && location.address) {
-                        const shareText = `Vị trí của tôi: ${location.address}\nhttps://maps.google.com/maps?q=${location.latitude},${location.longitude}`;
-                        // Ở đây bạn có thể thêm chức năng chia sẻ thực tế
-                        Alert.alert('Chia sẻ', 'Chức năng chia sẻ sẽ được thêm sau.');
-                      }
-                    }
-                  }
-                ]
-              );
-            } else {
-              getCurrentLocation();
-            }
+          className="absolute right-4 bottom-32 p-3 rounded-full shadow-md z-10"
+          onPress={centerMapOnUser}
+          style={{
+            backgroundColor: currentTheme.colors.card,
+            shadowColor: currentTheme.colors.text,
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.1,
+            shadowRadius: 4,
+            elevation: 3,
           }}
         >
-          <Ionicons name="locate" size={24} color={theme.colors.primary} />
+          <Ionicons name="locate" size={24} color={currentTheme.colors.primary} />
         </TouchableOpacity>
         
         {/* Nút theo dõi hướng */}
         <TouchableOpacity 
-          className={`absolute right-4 bottom-48 p-3 rounded-full shadow-md z-10 ${followUserHeading ? 'bg-primary' : 'bg-white'}`}
-          onPress={toggleFollowHeading}
+          className={`absolute right-4 bottom-48 p-3 rounded-full shadow-md z-10 ${
+            compassMode === 'off' ? '' : 
+            compassMode === 'follow' ? '' : ''
+          }`}
+          onPress={toggleCompassMode}
+          style={{
+            backgroundColor: compassMode === 'rotate' ? currentTheme.colors.primary : currentTheme.colors.card,
+            shadowColor: currentTheme.colors.text,
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.1,
+            shadowRadius: 4,
+            elevation: 3,
+          }}
         >
           <Ionicons 
             name="compass" 
             size={24} 
-            color={followUserHeading ? '#FFF' : theme.colors.primary} 
+            color={compassMode === 'rotate' ? '#FFF' : currentTheme.colors.primary} 
           />
         </TouchableOpacity>
         
         {/* Nút chuyển đổi kiểu bản đồ */}
         <TouchableOpacity 
-          className="absolute right-4 bottom-64 bg-white p-3 rounded-full shadow-md z-10"
+          className="absolute right-4 bottom-64 p-3 rounded-full shadow-md z-10"
           onPress={() => {
             // Chuyển đổi giữa các kiểu bản đồ: standard, satellite, hybrid
             const mapTypes: MapType[] = ['standard', 'satellite', 'hybrid'];
@@ -1166,9 +1435,22 @@ const MapScreen = () => {
             const nextIndex = (currentIndex + 1) % mapTypes.length;
             setMapType(mapTypes[nextIndex]);
           }}
+          style={{
+            backgroundColor: currentTheme.colors.card,
+            shadowColor: currentTheme.colors.text,
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.1,
+            shadowRadius: 4,
+            elevation: 3,
+          }}
         >
-          <Ionicons name="layers" size={24} color={theme.colors.primary} />
+          <Ionicons name="layers" size={24} color={currentTheme.colors.primary} />
         </TouchableOpacity>
+        
+        {/* Nút chuyển đổi theme */}
+        <ThemeToggleButton 
+          className="absolute right-4 bottom-80 p-3 rounded-full shadow-md z-10"
+        />
       </View>
     </GestureHandlerRootView>
   );
