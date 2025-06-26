@@ -9,16 +9,19 @@ import {
   Easing,
   FlatList,
   Keyboard,
+  Platform,
   StatusBar,
   StyleSheet,
   Text,
   TextInput,
+  TouchableNativeFeedback,
   TouchableOpacity,
   View
 } from 'react-native';
 import { GestureHandlerRootView, PanGestureHandler } from 'react-native-gesture-handler';
 import MapView, { MapType, Marker, Polyline, PROVIDER_DEFAULT } from 'react-native-maps';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import SearchBar from '../components/SearchBar';
 import ThemeToggleButton from '../components/ThemeToggleButton';
 import { getTheme } from '../constants/theme';
 import { useTheme as useAppTheme } from '../contexts/ThemeContext';
@@ -26,7 +29,6 @@ import useDebounce from '../hooks/useDebounce';
 import useLocation from '../hooks/useLocation';
 import usePlaces from '../hooks/usePlaces';
 import useRoute from '../hooks/useRoute';
-import { getAddressFromCoordinates } from '../services/locationService';
 
 const { width, height } = Dimensions.get('window');
 const CARD_HEIGHT = 220;
@@ -101,67 +103,6 @@ interface PlacesHook {
   selectPlace: (place: Place) => Promise<Place>;
 }
 
-// Component SearchBar mới - trực tiếp hiển thị input thay vì button
-const SearchBar = ({ 
-  value, 
-  onChangeText, 
-  onSubmitEditing, 
-  onFocus,
-  placeholder, 
-  autoFocus = false
-}: { 
-  value: string;
-  onChangeText: (text: string) => void;
-  onSubmitEditing: () => void;
-  onFocus?: () => void;
-  placeholder: string;
-  autoFocus?: boolean;
-}) => {
-  const { theme } = useAppTheme();
-  const currentTheme = getTheme(theme);
-  
-  return (
-    <View 
-      className="flex-row items-center rounded-md p-2 shadow-sm"
-      style={{
-        backgroundColor: currentTheme.colors.card,
-        borderColor: currentTheme.colors.border,
-        borderWidth: 1,
-      }}
-    >
-      <View 
-        className="w-8 h-8 rounded-full justify-center items-center mr-2"
-        style={{ backgroundColor: currentTheme.colors.backgroundHighlight }}
-      >
-        <Ionicons name="search" size={18} color={currentTheme.colors.primary} />
-      </View>
-      
-      <TextInput
-        className="flex-1"
-        placeholder={placeholder}
-        placeholderTextColor={currentTheme.colors.textSecondary}
-        value={value}
-        onChangeText={onChangeText}
-        onSubmitEditing={onSubmitEditing}
-        onFocus={onFocus}
-        returnKeyType="search"
-        autoFocus={autoFocus}
-        style={{
-          color: currentTheme.colors.text,
-        }}
-      />
-      
-      {value.length > 0 && (
-        <TouchableOpacity
-          onPress={() => onChangeText('')}
-        >
-          <Ionicons name="close-circle" size={20} color={currentTheme.colors.grey} />
-        </TouchableOpacity>
-      )}
-    </View>
-  );
-};
-
 // Nút điều khiển bản đồ (zoom in/out)
 const MapControls = React.memo(({ onZoomIn, onZoomOut }: { onZoomIn: () => void; onZoomOut: () => void }) => {
   const { theme } = useAppTheme();
@@ -184,13 +125,13 @@ const MapControls = React.memo(({ onZoomIn, onZoomOut }: { onZoomIn: () => void;
         onPress={onZoomIn}
         style={{ borderBottomColor: currentTheme.colors.border }}
       >
-        <Ionicons name="add" size={22} color={currentTheme.colors.text} />
+        <Ionicons name="add" size={22} color={currentTheme.colors.primary} />
       </TouchableOpacity>
       <TouchableOpacity 
         className="p-3"
         onPress={onZoomOut}
       >
-        <Ionicons name="remove" size={22} color={currentTheme.colors.text} />
+        <Ionicons name="remove" size={22} color={currentTheme.colors.primary} />
       </TouchableOpacity>
     </View>
   );
@@ -357,19 +298,49 @@ const MapScreen = () => {
   // Thêm state cho tìm kiếm trực tiếp
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearchResults, setShowSearchResults] = useState(false);
-  const [searchResults, setSearchResults] = useState<Place[]>([]);
+  const [localSearchResults, setLocalSearchResults] = useState<Place[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   
-  // Đơn giản hóa animation cho thanh search
+  // Animation cho thanh search và kết quả tìm kiếm
   const searchBarAnimation = useRef(new Animated.Value(0)).current;
+  const historySlideAnimation = useRef(new Animated.Value(50)).current; // Bắt đầu từ 50px bên dưới
+  const historyOpacityAnimation = useRef(new Animated.Value(0)).current; // Bắt đầu với opacity 0
   
-  // Lấy hook usePlaces để quản lý lịch sử tìm kiếm
+  // Sử dụng custom hooks
   const { 
-    search, 
+    location, 
+    address, 
+    loading: locationLoading, 
+    error: locationError, 
+    isTracking,
+    getCurrentHeading, 
+    startLocationTracking, 
+    getCurrentLocation, 
+    stopLocationTracking,
+    getAddressFromCoordinates
+  } = useLocation() as {
+    location: LocationType | null;
+    address: string;
+    loading: boolean;
+    error: string | null;
+    isTracking: boolean;
+    getCurrentHeading: () => number;
+    startLocationTracking: () => void;
+    getCurrentLocation: () => void;
+    stopLocationTracking: () => void;
+    getAddressFromCoordinates: (lat: number, lng: number) => Promise<string>;
+  };
+  
+  const { 
+    searchResults, 
     history, 
+    search, 
+    searchNearby, 
+    savePlace: savePlaceToHistory, 
     loading: placesLoading, 
     loadHistory, 
-    selectPlace: savePlaceToHistory 
+    clearSearchResults,
+    selectPlace
   } = usePlaces() as PlacesHook;
   
   // Áp dụng debounce cho searchQuery
@@ -397,28 +368,6 @@ const MapScreen = () => {
   // Animation ref để tránh tạo animation mới khi đang có animation
   const animationInProgressRef = useRef(false);
   const headingUpdateIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  
-  const { 
-    location, 
-    address, 
-    loading: locationLoading, 
-    error: locationError, 
-    isTracking,
-    getCurrentHeading, 
-    startLocationTracking, 
-    getCurrentLocation, 
-    stopLocationTracking 
-  } = useLocation() as {
-    location: LocationType | null;
-    address: string;
-    loading: boolean;
-    error: string | null;
-    isTracking: boolean;
-    getCurrentHeading: () => number;
-    startLocationTracking: () => void;
-    getCurrentLocation: () => void;
-    stopLocationTracking: () => void;
-  };
   
   const { route, loading: routeLoading, error: routeApiError, getRoute, clearRoute } = useRoute() as {
     route: RouteType | null;
@@ -459,7 +408,7 @@ const MapScreen = () => {
     } finally {
       setIsLoadingReverseGeocode(false);
     }
-  }, []);
+  }, [getAddressFromCoordinates]);
 
   // Lấy vị trí ban đầu - sửa lỗi vòng lặp vô hạn
   useEffect(() => {
@@ -500,7 +449,7 @@ const MapScreen = () => {
         location,
         null
       );
-      setSearchResults(results);
+      setLocalSearchResults(results);
     } catch (error) {
       console.error('Error searching places:', error);
       Alert.alert('Lỗi', 'Không thể tìm kiếm địa điểm. Vui lòng thử lại sau.');
@@ -691,40 +640,83 @@ const MapScreen = () => {
     }
   };
   
-  // Xử lý khi focus vào ô tìm kiếm
+  // Hàm xử lý khi focus vào ô tìm kiếm
   const handleSearchFocus = () => {
+    // Hiển thị màn hình tìm kiếm
     setShowSearchResults(true);
     
-    // Animate search bar khi focus - đơn giản hóa
+    // Animation hiển thị màn hình tìm kiếm
     Animated.timing(searchBarAnimation, {
       toValue: 1,
-      duration: 250,
+      duration: 200,
       useNativeDriver: true,
       easing: Easing.out(Easing.ease)
     }).start();
-  };
-  
-  // Xử lý khi nhấn nút tìm kiếm
-  const handleSearch = () => {
-    if (!searchQuery.trim()) return;
     
-    Keyboard.dismiss();
-    performSearch(searchQuery);
+    // Animation cho component history
+    Animated.parallel([
+      Animated.timing(historySlideAnimation, {
+        toValue: 0,
+        duration: 400,
+        delay: 100,
+        useNativeDriver: true,
+        easing: Easing.out(Easing.ease)
+      }),
+      Animated.timing(historyOpacityAnimation, {
+        toValue: 1,
+        duration: 400,
+        delay: 100,
+        useNativeDriver: true,
+        easing: Easing.out(Easing.ease)
+      })
+    ]).start();
+    
+    // Load lịch sử tìm kiếm
+    loadHistory().then(() => {
+      // Cập nhật state
+    }).catch(error => {
+      console.error('Error loading history:', error);
+    });
   };
   
-  // Xử lý khi đóng kết quả tìm kiếm
+  // Hàm xử lý khi nhấn tìm kiếm
+  const handleSearch = () => {
+    if (searchQuery.trim().length >= 2) {
+      performSearch(searchQuery);
+    }
+    Keyboard.dismiss();
+  };
+  
+  // Hàm xử lý khi đóng tìm kiếm
   const handleCloseSearch = () => {
-    // Animate search bar khi đóng - đơn giản hóa
-    Animated.timing(searchBarAnimation, {
-      toValue: 0,
-      duration: 250,
-      useNativeDriver: true,
-      easing: Easing.out(Easing.ease)
-    }).start(() => {
+    // Ẩn kết quả tìm kiếm với animation
+    Animated.parallel([
+      Animated.timing(searchBarAnimation, {
+        toValue: 0,
+        duration: 200,
+        useNativeDriver: true,
+        easing: Easing.in(Easing.ease)
+      }),
+      Animated.timing(historySlideAnimation, {
+        toValue: 50,
+        duration: 200,
+        useNativeDriver: true,
+        easing: Easing.in(Easing.ease)
+      }),
+      Animated.timing(historyOpacityAnimation, {
+        toValue: 0,
+        duration: 200,
+        useNativeDriver: true,
+        easing: Easing.in(Easing.ease)
+      })
+    ]).start(() => {
       setShowSearchResults(false);
+      // Xóa kết quả tìm kiếm
       setSearchQuery('');
+      clearSearchResults();
     });
     
+    // Ẩn bàn phím
     Keyboard.dismiss();
   };
 
@@ -946,7 +938,7 @@ const MapScreen = () => {
     if (compassMode === 'off') return null;
     
     return (
-      <View className="absolute top-32 left-4 bg-white p-2 rounded-lg shadow-md z-10 items-center">
+      <View className="absolute top-40 left-4 bg-white p-2 rounded-lg shadow-md z-10 items-center">
         <Text className="text-xs text-textSecondary">Hướng</Text>
         <View className="flex-row items-center">
           <Ionicons name="compass" size={16} color={currentTheme.colors.primary} />
@@ -955,6 +947,27 @@ const MapScreen = () => {
       </View>
     );
   };
+
+  // Hàm tạo hiệu ứng cho từng item trong danh sách
+  const getItemAnimationStyle = useCallback((index: number) => {
+    return {
+      opacity: historyOpacityAnimation,
+      transform: [
+        { 
+          translateY: historySlideAnimation.interpolate({
+            inputRange: [0, 50],
+            outputRange: [0, 25 + index * 5]
+          })
+        },
+        {
+          scale: historyOpacityAnimation.interpolate({
+            inputRange: [0, 1],
+            outputRange: [0.9, 1]
+          })
+        }
+      ]
+    };
+  }, [historyOpacityAnimation, historySlideAnimation]);
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
@@ -1123,78 +1136,18 @@ const MapScreen = () => {
           </View>
         )}
         
-        {/* Thanh tìm kiếm ở trên cùng - đơn giản hóa */}
+        {/* Thanh tìm kiếm ở trên cùng - luôn hiển thị khi không trong chế độ điều hướng */}
         {!showDirectionsUI && !isNavigating && (
           <View 
-            className="absolute top-0 left-0 right-0 px-4 z-10"
+            className="absolute top-0 left-0 right-0 px-4 z-30"
             style={{
               paddingTop: insets.top + 12,
               paddingBottom: 16,
+              backgroundColor: showSearchResults ? 'transparent' : undefined,
             }}
           >
-            <TouchableOpacity
-              activeOpacity={0.8}
-              onPress={handleSearchFocus}
-              className="shadow-sm"
-            >
-              <View 
-                className="flex-row items-center rounded-lg p-3 shadow-sm"
-                style={{
-                  backgroundColor: currentTheme.colors.card,
-                  shadowColor: currentTheme.colors.text,
-                  shadowOffset: { width: 0, height: 2 },
-                  shadowOpacity: 0.1,
-                  shadowRadius: 4,
-                  elevation: 3,
-                }}
-              >
-                <View 
-                  className="w-8 h-8 rounded-full justify-center items-center mr-2"
-                  style={{ backgroundColor: currentTheme.colors.backgroundHighlight }}
-                >
-                  <Ionicons name="search" size={18} color={currentTheme.colors.primary} />
-                </View>
-                <Text 
-                  className="flex-1"
-                  style={{ color: currentTheme.colors.textSecondary }}
-                >
-                  Tìm kiếm địa điểm...
-                </Text>
-              </View>
-            </TouchableOpacity>
-          </View>
-        )}
-        
-        {/* Kết quả tìm kiếm và lịch sử - sửa lại animation */}
-        {showSearchResults && (
-          <Animated.View 
-            className="absolute top-0 left-0 right-0 bottom-0 z-20"
-            style={{
-              backgroundColor: currentTheme.colors.background,
-              opacity: searchBarAnimation,
-              transform: [
-                { 
-                  translateY: searchBarAnimation.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [30, 0]
-                  })
-                }
-              ]
-            }}
-          >
-            <View 
-              className="shadow-sm" 
-              style={{ 
-                paddingTop: insets.top,
-                backgroundColor: currentTheme.colors.card,
-                shadowColor: currentTheme.colors.text,
-                shadowOffset: { width: 0, height: 2 },
-                shadowOpacity: 0.1,
-                shadowRadius: 4,
-                elevation: 3,
-              }}
-            >
-              <View className="flex-row items-center px-4 py-3">
+            <View className="flex-row items-center">
+              {showSearchResults && (
                 <TouchableOpacity 
                   onPress={handleCloseSearch}
                   className="mr-3 p-1"
@@ -1202,8 +1155,43 @@ const MapScreen = () => {
                 >
                   <Ionicons name="arrow-back" size={24} color={currentTheme.colors.primary} />
                 </TouchableOpacity>
-                
-                <View className="flex-1">
+              )}
+              
+              <View className="flex-1">
+                {!showSearchResults ? (
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    onPress={handleSearchFocus}
+                    className="shadow-sm"
+                  >
+                    <View 
+                      className="flex-row items-center rounded-full p-3 shadow-sm"
+                      style={{
+                        backgroundColor: currentTheme.colors.card,
+                        shadowColor: currentTheme.colors.text,
+                        shadowOffset: { width: 0, height: 2 },
+                        shadowOpacity: 0.1,
+                        shadowRadius: 4,
+                        elevation: 3,
+                        borderColor: currentTheme.colors.border,
+                        borderWidth: 1,
+                      }}
+                    >
+                      <View 
+                        className="w-8 h-8 rounded-full justify-center items-center mr-2"
+                        style={{ backgroundColor: currentTheme.colors.backgroundHighlight }}
+                      >
+                        <Ionicons name="search" size={18} color={currentTheme.colors.primary} />
+                      </View>
+                      <Text 
+                        className="flex-1"
+                        style={{ color: currentTheme.colors.textSecondary }}
+                      >
+                        Tìm kiếm địa điểm...
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                ) : (
                   <SearchBar
                     value={searchQuery}
                     onChangeText={setSearchQuery}
@@ -1211,26 +1199,42 @@ const MapScreen = () => {
                     placeholder="Tìm kiếm địa điểm..."
                     autoFocus={true}
                   />
-                </View>
+                )}
               </View>
             </View>
-            
+          </View>
+        )}
+        
+        {/* Kết quả tìm kiếm và lịch sử */}
+        {showSearchResults && (
+          <Animated.View 
+            className="absolute top-0 left-0 right-0 bottom-0 z-20"
+            style={{
+              backgroundColor: currentTheme.colors.background,
+              opacity: searchBarAnimation,
+              paddingTop: insets.top + 70, // Để không che phủ thanh tìm kiếm
+            }}
+          >
             {/* Hiển thị indicator khi đang tìm kiếm */}
             {searchLoading ? (
               <View className="flex-1 justify-center items-center">
                 <ActivityIndicator size="large" color={currentTheme.colors.primary} />
               </View>
             ) : (
-              <FlatList
-                data={searchQuery.length >= 2 ? searchResults : history}
+              <Animated.FlatList
+                data={searchQuery.length >= 2 ? localSearchResults : history}
                 keyExtractor={(item) => item.id.toString()}
                 keyboardShouldPersistTaps="handled"
                 keyboardDismissMode="on-drag"
                 contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}
+                style={{
+                  transform: [{ translateY: historySlideAnimation }],
+                  opacity: historyOpacityAnimation
+                }}
                 ListHeaderComponent={
                   searchQuery.length < 2 ? (
                     <View 
-                      className="px-4 py-3"
+                      className="px-4 py-4"
                       style={{ backgroundColor: currentTheme.colors.backgroundHighlight }}
                     >
                       <Text 
@@ -1240,7 +1244,7 @@ const MapScreen = () => {
                         Lịch sử tìm kiếm
                       </Text>
                     </View>
-                  ) : searchResults.length > 0 ? (
+                  ) : localSearchResults.length > 0 ? (
                     <View 
                       className="px-4 py-3"
                       style={{ backgroundColor: currentTheme.colors.backgroundHighlight }}
@@ -1254,60 +1258,103 @@ const MapScreen = () => {
                     </View>
                   ) : null
                 }
-                renderItem={({ item }) => (
-                  <TouchableOpacity 
-                    className="flex-row p-4 border-b"
-                    onPress={() => handleSelectPlace(item)}
-                    activeOpacity={0.7}
-                    style={{ borderBottomColor: currentTheme.colors.border }}
+                renderItem={({ item, index }) => (
+                  <Animated.View
+                    style={getItemAnimationStyle(index)}
                   >
-                    <View 
-                      className="w-10 h-10 rounded-full justify-center items-center mr-3"
-                      style={{ backgroundColor: currentTheme.colors.backgroundHighlight }}
-                    >
-                      <Ionicons 
-                        name={item.category === 'restaurant' ? 'restaurant' : 'location'} 
-                        size={20} 
-                        color={currentTheme.colors.primary} 
-                      />
-                    </View>
-                    <View className="flex-1">
-                      <Text 
-                        className="text-base font-semibold"
-                        style={{ color: currentTheme.colors.text }}
+                    {Platform.OS === 'android' ? (
+                      <TouchableNativeFeedback
+                        onPress={() => handleSelectPlace(item)}
+                        background={TouchableNativeFeedback.Ripple(
+                          currentTheme.colors.primary + '20',
+                          false
+                        )}
                       >
-                        {item.name}
-                      </Text>
-                      <Text 
-                        className="text-sm" 
-                        numberOfLines={2}
-                        style={{ color: currentTheme.colors.textSecondary }}
+                        <View 
+                          className="flex-row items-center px-4 py-3 border-b"
+                          style={{ 
+                            borderBottomColor: currentTheme.colors.border,
+                            backgroundColor: currentTheme.colors.card
+                          }}
+                        >
+                          <View 
+                            className="w-10 h-10 rounded-full justify-center items-center mr-3"
+                            style={{ backgroundColor: currentTheme.colors.backgroundHighlight }}
+                          >
+                            <Ionicons 
+                              name={item.category === 'history' ? 'time' : 'location'} 
+                              size={20} 
+                              color={currentTheme.colors.primary} 
+                            />
+                          </View>
+                          
+                          <View className="flex-1">
+                            <Text 
+                              className="text-base font-semibold"
+                              style={{ color: currentTheme.colors.text }}
+                              numberOfLines={1}
+                            >
+                              {item.name}
+                            </Text>
+                            
+                            <Text 
+                              className="text-sm"
+                              style={{ color: currentTheme.colors.textSecondary }}
+                              numberOfLines={1}
+                            >
+                              {item.address}
+                            </Text>
+                          </View>
+                        </View>
+                      </TouchableNativeFeedback>
+                    ) : (
+                      <TouchableOpacity 
+                        className="flex-row items-center px-4 py-3 border-b"
+                        style={{ 
+                          borderBottomColor: currentTheme.colors.border,
+                          backgroundColor: currentTheme.colors.card
+                        }}
+                        onPress={() => handleSelectPlace(item)}
+                        activeOpacity={0.7}
                       >
-                        {item.address}
-                      </Text>
-                      {item.distance && (
-                        <Text 
-                          className="text-xs mt-1"
-                          style={{ color: currentTheme.colors.textSecondary }}
+                        <View 
+                          className="w-10 h-10 rounded-full justify-center items-center mr-3"
+                          style={{ backgroundColor: currentTheme.colors.backgroundHighlight }}
                         >
-                          {item.distance}
-                        </Text>
-                      )}
-                      {item.timestamp && (
-                        <Text 
-                          className="text-xs mt-1"
-                          style={{ color: currentTheme.colors.textSecondary }}
-                        >
-                          <Ionicons name="time-outline" size={12} color={currentTheme.colors.grey} />
-                          {' '}{new Date(item.timestamp).toLocaleString()}
-                        </Text>
-                      )}
-                    </View>
-                  </TouchableOpacity>
+                          <Ionicons 
+                            name={item.category === 'history' ? 'time' : 'location'} 
+                            size={20} 
+                            color={currentTheme.colors.primary} 
+                          />
+                        </View>
+                        
+                        <View className="flex-1">
+                          <Text 
+                            className="text-base font-semibold"
+                            style={{ color: currentTheme.colors.text }}
+                            numberOfLines={1}
+                          >
+                            {item.name}
+                          </Text>
+                          
+                          <Text 
+                            className="text-sm"
+                            style={{ color: currentTheme.colors.textSecondary }}
+                            numberOfLines={1}
+                          >
+                            {item.address}
+                          </Text>
+                        </View>
+                      </TouchableOpacity>
+                    )}
+                  </Animated.View>
                 )}
                 ListEmptyComponent={
                   searchQuery.length >= 2 ? (
-                    <View className="flex-1 justify-center items-center py-10">
+                    <Animated.View 
+                      className="flex-1 justify-center items-center py-10"
+                      style={getItemAnimationStyle(0)}
+                    >
                       <Ionicons name="search" size={64} color={currentTheme.colors.border} />
                       <Text 
                         className="text-lg font-bold mt-4"
@@ -1321,9 +1368,12 @@ const MapScreen = () => {
                       >
                         Thử tìm kiếm với từ khóa khác
                       </Text>
-                    </View>
+                    </Animated.View>
                   ) : history.length === 0 ? (
-                    <View className="flex-1 justify-center items-center py-10">
+                    <Animated.View 
+                      className="flex-1 justify-center items-center py-10"
+                      style={getItemAnimationStyle(0)}
+                    >
                       <Ionicons name="time" size={64} color={currentTheme.colors.border} />
                       <Text 
                         className="text-lg font-bold mt-4"
@@ -1337,7 +1387,7 @@ const MapScreen = () => {
                       >
                         Các địa điểm bạn tìm kiếm sẽ xuất hiện ở đây
                       </Text>
-                    </View>
+                    </Animated.View>
                   ) : null
                 }
               />
@@ -1452,7 +1502,7 @@ const MapScreen = () => {
                       {/* Nút Bắt đầu điều hướng */}
                       {!isNavigating && route && route.legs && route.legs.length > 0 && (
                         <TouchableOpacity
-                          className="mb-4 py-3 px-4 rounded-lg items-center"
+                          className="mb-4 py-3 px-4 rounded-full items-center"
                           style={{ backgroundColor: currentTheme.colors.primary }}
                           onPress={startNavigation}
                         >
@@ -1465,7 +1515,7 @@ const MapScreen = () => {
                       {/* Nút Dừng điều hướng */}
                       {isNavigating && (
                         <TouchableOpacity
-                          className="mb-4 py-3 px-4 rounded-lg items-center"
+                          className="mb-4 py-3 px-4 rounded-full items-center"
                           style={{ backgroundColor: currentTheme.colors.error }}
                           onPress={stopNavigation}
                         >
@@ -1478,7 +1528,7 @@ const MapScreen = () => {
                       {/* Hiển thị bước hiện tại khi đang điều hướng */}
                       {isNavigating && route && route.legs && route.legs[0]?.steps && currentStepIndex < route.legs[0].steps.length && (
                         <View 
-                          className="mb-4 p-4 rounded-lg"
+                          className="mb-4 p-4 rounded-xl"
                           style={{ backgroundColor: currentTheme.colors.backgroundHighlight }}
                         >
                           <Text 
@@ -1649,7 +1699,7 @@ const MapScreen = () => {
         
         {/* Nút chuyển đổi theme */}
         <ThemeToggleButton 
-          className="absolute right-4 bottom-80 p-3 rounded-full shadow-md z-10"
+          className="absolute right-4 bottom-80 z-10"
         />
       </View>
     </GestureHandlerRootView>

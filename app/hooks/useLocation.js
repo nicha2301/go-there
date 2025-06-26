@@ -256,10 +256,11 @@ const useLocation = () => {
     loading,
     error,
     isTracking,
-    getCurrentHeading, // Trả về hàm để lấy heading hiện tại
     getCurrentLocation,
     startLocationTracking,
-    stopLocationTracking
+    stopLocationTracking,
+    getCurrentHeading,
+    getAddressFromCoordinates
   };
 };
 
