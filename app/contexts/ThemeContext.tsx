@@ -61,4 +61,6 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
       {children}
     </ThemeContext.Provider>
   );
-}; 
+};
+
+export default ThemeContext; 

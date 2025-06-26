@@ -78,6 +78,13 @@ interface RouteType {
   startPoint: Coordinates;
   endPoint: Coordinates;
   transportMode: string;
+  legs?: {
+    steps: {
+      name?: string;
+      distance: number;
+      duration: number;
+    }[];
+  }[];
 }
 
 // Thêm interface PlacesHook để định nghĩa kiểu trả về của usePlaces
@@ -350,7 +357,7 @@ const MapScreen = () => {
   const router = useRouter();
   const params = useLocalSearchParams();
   const { theme } = useAppTheme();
-  const currentTheme = getTheme(theme);
+  const currentTheme = useMemo(() => getTheme(theme), [theme]);
   
   const [mapReady, setMapReady] = useState(false);
   const [selectedPlace, setSelectedPlace] = useState<Place | null>(null);
@@ -843,18 +850,17 @@ const MapScreen = () => {
 
   // Hiển thị chỉ báo hướng
   const renderCompassIndicator = () => {
-    if (compassMode !== 'off') {
-      return (
-        <View className="absolute top-32 left-4 bg-white p-2 rounded-lg shadow-md z-10 items-center">
-          <Text className="text-xs text-textSecondary">Hướng</Text>
-          <View className="flex-row items-center">
-            <Ionicons name="compass" size={16} color={theme.colors.primary} />
-            <Text className="ml-1 font-bold">{Math.round(currentHeading)}°</Text>
-          </View>
+    if (compassMode === 'off') return null;
+    
+    return (
+      <View className="absolute top-32 left-4 bg-white p-2 rounded-lg shadow-md z-10 items-center">
+        <Text className="text-xs text-textSecondary">Hướng</Text>
+        <View className="flex-row items-center">
+          <Ionicons name="compass" size={16} color={currentTheme.colors.primary} />
+          <Text className="ml-1 font-bold">{Math.round(currentHeading)}°</Text>
         </View>
-      );
-    }
-    return null;
+      </View>
+    );
   };
 
   return (
@@ -881,6 +887,7 @@ const MapScreen = () => {
           onMapReady={() => setMapReady(true)}
           showsMyLocationButton={false}
           followsUserLocation={false} // Tắt tính năng này để tự quản lý
+          customMapStyle={theme === 'dark' ? currentTheme.mapStyle : undefined}
           onPress={(e) => {
             if (showSearchResults) {
               handleCloseSearch();
@@ -952,7 +959,7 @@ const MapScreen = () => {
               <View className="items-center justify-center">
                 {isLoadingReverseGeocode ? (
                   <View className="bg-white p-2 rounded-full">
-                    <ActivityIndicator size="small" color={theme.colors.primary} />
+                                          <ActivityIndicator size="small" color={currentTheme.colors.primary} />
                   </View>
                 ) : (
                   <View className="bg-primary p-2 rounded-full">
@@ -971,7 +978,7 @@ const MapScreen = () => {
                 longitude: coord[0]
               }))}
               strokeWidth={5}
-              strokeColor={theme.colors.primary}
+                                        strokeColor={currentTheme.colors.primary}
               lineCap="round"
               lineJoin="round"
             />
@@ -1310,9 +1317,9 @@ const MapScreen = () => {
                     </View>
                   ) : (
                     <>
-                      {(route && (route as any).legs && Array.isArray((route as any).legs) && (route as any).legs.length > 0) ? (
+                      {(route && route.legs && Array.isArray(route.legs) && route.legs.length > 0 && route.legs[0]?.steps) ? (
                         <FlatList
-                          data={(route as any).legs?.[0]?.steps || []}
+                          data={(route.legs && route.legs[0] && route.legs[0].steps) ? route.legs[0].steps : []}
                           renderItem={({ item, index }) => (
                             <View 
                               className="flex-row py-3 border-b"
@@ -1329,7 +1336,7 @@ const MapScreen = () => {
                                     color={currentTheme.colors.primary} 
                                   />
                                 </View>
-                                {index < ((route as any).legs?.[0]?.steps?.length - 1 || 0) && (
+                                {index < ((route.legs && route.legs[0] && route.legs[0].steps) ? route.legs[0].steps.length - 1 : 0) && (
                                   <View 
                                     className="w-[2px] h-8 mt-1"
                                     style={{ backgroundColor: currentTheme.colors.border }}
