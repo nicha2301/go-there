@@ -36,6 +36,12 @@
     "experiments": {
       "typedRoutes": true
     },
-    "sdkVersion": "53.0.0"
+    "sdkVersion": "53.0.0",
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "b4c3b374-53bd-4381-a8f7-2794028f88f3"
+      }
+    }
   }
 }
