@@ -67,12 +67,12 @@
 
 Bạn có thể tải và cài đặt ứng dụng Go There trực tiếp thông qua link sau:
 
-[Tải Go There cho Android](https://expo.dev/accounts/nicha23/projects/go-there/builds/3b1d88b2-ad52-4c87-a7a1-7fb059362bfe)
+[Tải Go There cho Android](https://expo.dev/accounts/nicha23/projects/go-there/builds/0bad3b10-aa32-47db-a2c5-dee3316199df)
 
 Hoặc quét mã QR bên dưới:
 
 <div align="center">
-  <img src="https://expo.dev/accounts/nicha23/projects/go-there/builds/0bad3b10-aa32-47db-a2c5-dee3316199df" alt="QR Code" width="200" />
+  <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=https://expo.dev/accounts/nicha23/projects/go-there/builds/0bad3b10-aa32-47db-a2c5-dee3316199df" alt="QR Code" width="200" />
 </div>
 
 ## 🛠️ Công nghệ sử dụng
