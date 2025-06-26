@@ -12,7 +12,9 @@ const useLocation = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [watchId, setWatchId] = useState(null);
+  const [headingWatchId, setHeadingWatchId] = useState(null);
   const [isTracking, setIsTracking] = useState(false);
+  const [heading, setHeading] = useState(0); // Thêm state cho hướng
   
   // Sử dụng useRef để theo dõi lần gọi API cuối cùng
   const lastAddressRequestRef = useRef(null);
@@ -84,6 +86,28 @@ const useLocation = () => {
   }, []);
 
   /**
+   * Bắt đầu theo dõi hướng (heading)
+   */
+  const startHeadingTracking = useCallback(async () => {
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      
+      if (status !== 'granted') {
+        return;
+      }
+      
+      const headingId = await Location.watchHeadingAsync((headingData) => {
+        // Cập nhật heading state
+        setHeading(headingData.magHeading);
+      });
+      
+      setHeadingWatchId(headingId);
+    } catch (err) {
+      console.error('Error starting heading tracking:', err);
+    }
+  }, []);
+
+  /**
    * Bắt đầu theo dõi vị trí
    */
   const startLocationTracking = useCallback(async () => {
@@ -96,21 +120,29 @@ const useLocation = () => {
         return;
       }
       
-      // Bắt đầu theo dõi vị trí
+      // Bắt đầu theo dõi vị trí với tần suất cao hơn
       const id = await Location.watchPositionAsync(
         {
-          accuracy: Location.Accuracy.Balanced,
-          timeInterval: 5000,
-          distanceInterval: 10
+          accuracy: Location.Accuracy.High, // Tăng độ chính xác
+          timeInterval: 1000, // Giảm thời gian cập nhật xuống 1 giây
+          distanceInterval: 5, // Giảm khoảng cách cập nhật xuống 5 mét
         },
         (newLocation) => {
           const currentLocation = {
             latitude: newLocation.coords.latitude,
             longitude: newLocation.coords.longitude,
-            timestamp: newLocation.timestamp
+            timestamp: newLocation.timestamp,
+            accuracy: newLocation.coords.accuracy,
+            speed: newLocation.coords.speed,
+            heading: newLocation.coords.heading // Lưu heading từ location nếu có
           };
           
           setLocation(currentLocation);
+          
+          // Cập nhật heading nếu có
+          if (newLocation.coords.heading !== null) {
+            setHeading(newLocation.coords.heading);
+          }
           
           // Chỉ cập nhật địa chỉ nếu vị trí thay đổi đáng kể (> 50m)
           if (!location || calculateDistance(location, currentLocation) > 0.05) {
@@ -122,11 +154,14 @@ const useLocation = () => {
       setWatchId(id);
       setIsTracking(true);
       
+      // Bắt đầu theo dõi hướng riêng biệt để có cập nhật thường xuyên hơn
+      startHeadingTracking();
+      
     } catch (err) {
       console.error('Error starting location tracking:', err);
       setError('Không thể theo dõi vị trí. Vui lòng kiểm tra quyền truy cập và kết nối mạng.');
     }
-  }, [location, getAddressWithDebounce]);
+  }, [location, getAddressWithDebounce, startHeadingTracking]);
 
   /**
    * Dừng theo dõi vị trí
@@ -135,9 +170,15 @@ const useLocation = () => {
     if (watchId) {
       watchId.remove();
       setWatchId(null);
-      setIsTracking(false);
     }
-  }, [watchId]);
+    
+    if (headingWatchId) {
+      headingWatchId.remove();
+      setHeadingWatchId(null);
+    }
+    
+    setIsTracking(false);
+  }, [watchId, headingWatchId]);
 
   /**
    * Tính khoảng cách giữa hai vị trí
@@ -175,6 +216,10 @@ const useLocation = () => {
         watchId.remove();
       }
       
+      if (headingWatchId) {
+        headingWatchId.remove();
+      }
+      
       if (addressTimeoutRef.current) {
         clearTimeout(addressTimeoutRef.current);
       }
@@ -187,6 +232,7 @@ const useLocation = () => {
     loading,
     error,
     isTracking,
+    heading, // Trả về heading
     getCurrentLocation,
     startLocationTracking,
     stopLocationTracking
