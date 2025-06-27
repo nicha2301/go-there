@@ -15,7 +15,10 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.gothere.app"
+      "bundleIdentifier": "com.gothere.app",
+      "config": {
+        "googleMapsApiKey": "AIzaSyDtMwyskkMPqyo0oh6gODtfEj-xqXNG-No"
+      }
     },
     "android": {
       "package": "com.gothere.app",
@@ -23,7 +26,12 @@
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyDtMwyskkMPqyo0oh6gODtfEj-xqXNG-No"
+        }
+      }
     },
     "web": {
       "bundler": "metro",

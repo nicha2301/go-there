@@ -1,6 +1,3 @@
-import React from 'react';
-import MapScreen from './screens/map';
+import MapScreen from './screens/MapScreen';
  
-export default function Page() {
-  return <MapScreen />;
-} 
+export default MapScreen; 
