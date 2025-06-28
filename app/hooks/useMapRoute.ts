@@ -1,67 +1,163 @@
 import { useCallback, useState } from 'react';
-import { Alert } from 'react-native';
-import { Coordinates, RouteType } from '../types/map.types';
+import { Coordinates, Place } from '../types/map.types';
 
-export const useMapRoute = () => {
-  const [route, setRoute] = useState<RouteType | null>(null);
-  const [isLoadingRoute, setIsLoadingRoute] = useState(false);
-  const [routeDistance, setRouteDistance] = useState<number | null>(null);
-  const [routeDuration, setRouteDuration] = useState<number | null>(null);
+export const useMapRoute = (
+  mapRef: React.RefObject<any>,
+  getRoute: (start: Coordinates, end: Coordinates, mode: string) => Promise<any>,
+  reverseGeocode: (coords: Coordinates) => Promise<Place | null>,
+  savePlaceToHistory: (place: Place) => Promise<boolean>
+) => {
+  const [selectedPlace, setSelectedPlace] = useState<Place | null>(null);
+  const [markerCoords, setMarkerCoords] = useState<Coordinates | null>(null);
+  const [transportMode, setTransportMode] = useState<string>('driving');
+  const [showBackButton, setShowBackButton] = useState(false);
+  const [routeError, setRouteError] = useState<string | null>(null);
+  const [isLoadingReverseGeocode, setIsLoadingReverseGeocode] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [startPlaceName, setStartPlaceName] = useState<string>('');
+  const [endPlaceName, setEndPlaceName] = useState<string>('');
+  const [showDirectionsUI, setShowDirectionsUI] = useState(false);
 
-  /**
-   * Tìm đường đi từ điểm bắt đầu đến điểm kết thúc
-   */
-  const findRoute = useCallback(async (
-    getRoute: (start: Coordinates, end: Coordinates) => Promise<RouteType | null>,
-    startCoords: Coordinates, 
-    endCoords: Coordinates
-  ) => {
+  // Hàm tìm đường
+  const findRoute = useCallback(async (start: Coordinates, end: Coordinates, mode: string) => {
     try {
-      setIsLoadingRoute(true);
+      setIsLoading(true);
+      setRouteError(null);
       
-      // Reset route trước khi tìm đường mới để kích hoạt animation
-      setRoute(null);
-
-      const routeResult = await getRoute(startCoords, endCoords);
+      const routeData = await getRoute(start, end, mode);
       
-      if (routeResult) {
-        setRoute(routeResult);
-        
-        // Lưu thông tin khoảng cách và thời gian
-        if (routeResult.properties && routeResult.properties.segments && routeResult.properties.segments.length > 0) {
-          const segment = routeResult.properties.segments[0];
-          setRouteDistance(segment.distance);
-          setRouteDuration(segment.duration);
-        }
-        
-        return routeResult;
+      if (routeData) {
+        // Zoom đến khu vực hiển thị đường đi
+        setTimeout(() => {
+          if (mapRef.current) {
+            mapRef.current.fitToCoordinates(
+              [
+                { latitude: start.latitude, longitude: start.longitude },
+                { latitude: end.latitude, longitude: end.longitude }
+              ],
+              {
+                edgePadding: { top: 70, right: 70, bottom: 200, left: 70 },
+                animated: true
+              }
+            );
+          }
+        }, 200);
       }
-      
-      return null;
+
+      return routeData;
     } catch (error) {
       console.error('Error finding route:', error);
-      Alert.alert('Lỗi', 'Không thể tìm đường đi. Vui lòng thử lại sau.');
+      setRouteError('Không thể tìm đường đi. Vui lòng thử lại sau.');
       return null;
     } finally {
-      setIsLoadingRoute(false);
+      setIsLoading(false);
     }
-  }, []);
+  }, [mapRef, getRoute]);
 
-  /**
-   * Xóa đường đi hiện tại
-   */
-  const clearRoute = useCallback(() => {
-    setRoute(null);
-    setRouteDistance(null);
-    setRouteDuration(null);
+  // Xử lý khi chọn một địa điểm
+  const handleSelectPlace = useCallback(async (place: Place, location: Coordinates | null) => {
+    try {
+      // Lưu địa điểm vào lịch sử
+      await savePlaceToHistory(place);
+      
+      // Thiết lập địa điểm đã chọn
+      setSelectedPlace(place);
+      setMarkerCoords({
+        latitude: place.latitude,
+        longitude: place.longitude
+      });
+      setEndPlaceName(place.name);
+      setShowBackButton(true);
+      setShowDirectionsUI(true);
+      
+      // Nếu có vị trí hiện tại, tìm đường
+      if (location) {
+        findRoute(
+          { latitude: location.latitude, longitude: location.longitude },
+          { latitude: place.latitude, longitude: place.longitude },
+          transportMode
+        );
+      }
+
+      return true;
+    } catch (error) {
+      console.error('Error selecting place:', error);
+      return false;
+    }
+  }, [findRoute, savePlaceToHistory, transportMode]);
+
+  // Xử lý khi chọn phương tiện di chuyển
+  const handleTransportModeChange = useCallback((mode: string, location: Coordinates | null) => {
+    if (mode !== transportMode) {
+      setTransportMode(mode);
+      
+      // Nếu đã có điểm đi và điểm đến, tìm đường lại với phương tiện mới
+      if (location && selectedPlace) {
+        findRoute(
+          { latitude: location.latitude, longitude: location.longitude },
+          { latitude: selectedPlace.latitude, longitude: selectedPlace.longitude },
+          mode
+        );
+      }
+    }
+  }, [transportMode, selectedPlace, findRoute]);
+
+  // Xử lý khi nhấp vào bản đồ
+  const handleMapPress = useCallback(async (coords: Coordinates, location: Coordinates | null) => {
+    setMarkerCoords(coords);
+    
+    // Hiển thị loading indicator tại vị trí được chọn
+    setIsLoadingReverseGeocode(true);
+    
+    try {
+      const place = await reverseGeocode(coords);
+      if (place) {
+        setSelectedPlace(place);
+        setEndPlaceName(place.name);
+        setShowDirectionsUI(true);
+        
+        // Nếu có vị trí hiện tại, tìm đường
+        if (location) {
+          findRoute(
+            { latitude: location.latitude, longitude: location.longitude },
+            { latitude: place.latitude, longitude: place.longitude },
+            transportMode
+          );
+        }
+      }
+    } catch (error) {
+      console.error('Error in map press:', error);
+    } finally {
+      setIsLoadingReverseGeocode(false);
+    }
+  }, [findRoute, reverseGeocode, transportMode]);
+
+  // Xử lý khi nhấn nút quay lại
+  const handleBackPress = useCallback((clearRoute: () => void) => {
+    setShowDirectionsUI(false);
+    setSelectedPlace(null);
+    setMarkerCoords(null);
+    setEndPlaceName('');
+    setShowBackButton(false);
+    clearRoute();
   }, []);
 
   return {
-    route,
-    isLoadingRoute,
-    routeDistance,
-    routeDuration,
+    selectedPlace,
+    markerCoords,
+    transportMode,
+    showBackButton,
+    routeError,
+    isLoadingReverseGeocode,
+    isLoading,
+    startPlaceName,
+    setStartPlaceName,
+    endPlaceName,
+    showDirectionsUI,
     findRoute,
-    clearRoute,
+    handleSelectPlace,
+    handleTransportModeChange,
+    handleMapPress,
+    handleBackPress
   };
 }; 

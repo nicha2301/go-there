@@ -2,20 +2,19 @@ import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
-  Animated,
-  Dimensions,
-  Keyboard,
-  StatusBar,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View
+    ActivityIndicator,
+    Animated,
+    Dimensions,
+    Keyboard,
+    StatusBar,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View
 } from 'react-native';
 import { GestureHandlerRootView, PanGestureHandler } from 'react-native-gesture-handler';
-import MapView, { Marker, PROVIDER_DEFAULT } from 'react-native-maps';
+import MapView, { Marker, Polyline, PROVIDER_DEFAULT } from 'react-native-maps';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import AnimatedRoute from '../components/map/AnimatedRoute';
 import BottomSheetHeader from '../components/map/BottomSheetHeader';
 import CompassIndicator from '../components/map/CompassIndicator';
 import MapActionButtons from '../components/map/MapActionButtons';
@@ -411,12 +410,19 @@ const MapScreen = () => {
             </Marker>
           )}
           
-          {/* Sử dụng AnimatedRoute thay vì Polyline thông thường */}
-          <AnimatedRoute 
-            route={route}
-            strokeWidth={5}
-            strokeColor={currentTheme.colors.primary}
-          />
+          {/* Hiển thị đường đi */}
+          {route && route.geometry && route.geometry.coordinates && (
+            <Polyline
+              coordinates={route.geometry.coordinates.map((coord: [number, number]) => ({
+                latitude: coord[1],
+                longitude: coord[0]
+              }))}
+              strokeWidth={5}
+              strokeColor={currentTheme.colors.primary}
+              lineCap="round"
+              lineJoin="round"
+            />
+          )}
         </MapView>
         
         {/* Nút zoom */}
